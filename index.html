@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
+    <!-- Σταθερό UMD Bundle της NostrTools v1.17.0 -->
+    <script src="https://cdn.jsdelivr.net/npm/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
         input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
@@ -43,22 +45,6 @@
             return clean.padStart(64, '0');
         }
 
-        // Web Crypto SHA-256 για δημιουργία Nostr Event ID
-        async function calculateEventId(event) {
-            const serialized = JSON.stringify([
-                0,
-                event.pubkey,
-                event.created_at,
-                event.kind,
-                event.tags,
-                event.content
-            ]);
-            const msgUint8 = new TextEncoder().encode(serialized);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
         async function sendMessage() {
             const rawTarget = document.getElementById("targetAddress").value.trim();
             const text = document.getElementById("messageText").value.trim();
@@ -68,11 +54,17 @@
                 return;
             }
 
-            const targetPubKey = toNostrPubKey(rawTarget);
-            // Δημιουργούμε ένα σταθερό 64-char hex pubkey για τον Web Sender
-            const senderPubKey = "1111111111111111111111111111111111111111111111111111111111111111";
+            if (typeof NostrTools === 'undefined') {
+                log("❌ Σφάλμα: Η βιβλιοθήκη NostrTools δεν φορτώθηκε ακόμη.");
+                return;
+            }
 
-            log("<br>🔄 Δημιουργία Nostr Event...");
+            const targetPubKey = toNostrPubKey(rawTarget);
+
+            log("<br>🔄 Δημιουργία & Υπογραφή Nostr Event...");
+
+            const privKey = NostrTools.generatePrivateKey();
+            const pubKey = NostrTools.getPublicKey(privKey);
 
             const payload = JSON.stringify({
                 type: "OFFLINE_MSG",
@@ -81,23 +73,17 @@
 
             let event = {
                 kind: 4,
-                pubkey: senderPubKey,
+                pubkey: pubKey,
                 created_at: Math.floor(Date.now() / 1000),
                 tags: [["p", targetPubKey]],
                 content: payload
             };
 
-            try {
-                event.id = await calculateEventId(event);
-                // Δημιουργούμε ένα dummy 128-char hex signature για συμβατότητα
-                event.sig = "00".repeat(64);
+            event.id = NostrTools.getEventHash(event);
+            event.sig = NostrTools.signEvent(event, privKey);
 
-                log("🔑 Event ID: " + event.id.substring(0, 12) + "...");
-                log("🎯 Target PubKey: " + targetPubKey.substring(0, 12) + "...");
-            } catch (e) {
-                log("❌ Error calculating ID: " + e.message);
-                return;
-            }
+            log("🔑 Event ID: " + event.id.substring(0, 12) + "...");
+            log("🎯 Target PubKey: " + targetPubKey.substring(0, 16) + "...");
 
             let sentSuccessfully = false;
 
@@ -121,13 +107,12 @@
 
                     socket.onopen = () => {
                         socket.send(JSON.stringify(["EVENT", event]));
-                        log("📤 Το Event απεστάλη! Αναμονή επιβεβαίωσης...");
                     };
 
                     socket.onmessage = (msg) => {
                         try {
                             const response = JSON.parse(msg.data);
-                            log("📩 Relay Response: " + JSON.stringify(response));
+                            log("📩 Response: " + JSON.stringify(response));
 
                             if (response[0] === "OK" && response[1] === event.id) {
                                 handled = true;
