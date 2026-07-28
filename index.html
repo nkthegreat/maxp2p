@@ -4,14 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
-    <!-- Φόρτωση Nostr Tools για έγκυρες ψηφιακές υπογραφές -->
-    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
         input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
         button { background-color: #3f51b5; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 15px; }
         button:hover { background-color: #303f9f; }
-        #log { background: #000; padding: 12px; height: 240px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
+        #log { background: #000; padding: 12px; height: 260px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
     </style>
 </head>
 <body>
@@ -35,19 +33,30 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        // Δημιουργία τυχαίου έγκυρου Nostr Private Key για τη σελίδα
-        const webPrivateKey = NostrTools.generatePrivateKey();
-        const webPublicKey = NostrTools.getPublicKey(webPrivateKey);
-
         const relays = [
             "wss://nos.lol",
-            "wss://relay.damus.io",
-            "wss://relay.nostr.band"
+            "wss://relay.damus.io"
         ];
 
         function toNostrPubKey(address) {
             let clean = address.trim().toLowerCase().replace(/^0x/, '');
             return clean.padStart(64, '0');
+        }
+
+        // Web Crypto SHA-256 για δημιουργία Nostr Event ID
+        async function calculateEventId(event) {
+            const serialized = JSON.stringify([
+                0,
+                event.pubkey,
+                event.created_at,
+                event.kind,
+                event.tags,
+                event.content
+            ]);
+            const msgUint8 = new TextEncoder().encode(serialized);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
         async function sendMessage() {
@@ -60,36 +69,42 @@
             }
 
             const targetPubKey = toNostrPubKey(rawTarget);
+            // Δημιουργούμε ένα σταθερό 64-char hex pubkey για τον Web Sender
+            const senderPubKey = "1111111111111111111111111111111111111111111111111111111111111111";
 
-            log("<br>🔄 Προετοιμασία υπογεγραμμένου Nostr Event...");
+            log("<br>🔄 Δημιουργία Nostr Event...");
 
-            // Δημιουργία payload & tags
             const payload = JSON.stringify({
                 type: "OFFLINE_MSG",
                 data: text
             });
 
-            // Δημιουργία & Ψηφιακή Υπογραφή του Event σύμφωνα με το Nostr Protocol
             let event = {
                 kind: 4,
-                pubkey: webPublicKey,
+                pubkey: senderPubKey,
                 created_at: Math.floor(Date.now() / 1000),
                 tags: [["p", targetPubKey]],
                 content: payload
             };
 
-            event.id = NostrTools.getEventHash(event);
-            event.sig = NostrTools.signEvent(event, webPrivateKey);
+            try {
+                event.id = await calculateEventId(event);
+                // Δημιουργούμε ένα dummy 128-char hex signature για συμβατότητα
+                event.sig = "00".repeat(64);
 
-            log("🔑 Web PubKey: " + webPublicKey.substring(0, 10) + "...");
-            log("🎯 Target PubKey: " + targetPubKey.substring(0, 10) + "...");
+                log("🔑 Event ID: " + event.id.substring(0, 12) + "...");
+                log("🎯 Target PubKey: " + targetPubKey.substring(0, 12) + "...");
+            } catch (e) {
+                log("❌ Error calculating ID: " + e.message);
+                return;
+            }
 
             let sentSuccessfully = false;
 
             for (let relayUrl of relays) {
                 if (sentSuccessfully) break;
 
-                log("📡 Δοκιμή αποστολής στο " + relayUrl + "...");
+                log("📡 Αποστολή στο " + relayUrl + "...");
 
                 await new Promise((resolve) => {
                     const socket = new WebSocket(relayUrl);
@@ -105,26 +120,27 @@
                     }, 4000);
 
                     socket.onopen = () => {
-                        // Αποστολή του υπογεγραμμένου Event
                         socket.send(JSON.stringify(["EVENT", event]));
+                        log("📤 Το Event απεστάλη! Αναμονή επιβεβαίωσης...");
                     };
 
                     socket.onmessage = (msg) => {
                         try {
                             const response = JSON.parse(msg.data);
-                            // Έλεγχος αν ο Relay αποδέχτηκε το event (OK frame)
+                            log("📩 Relay Response: " + JSON.stringify(response));
+
                             if (response[0] === "OK" && response[1] === event.id) {
+                                handled = true;
+                                clearTimeout(timeout);
                                 if (response[2] === true) {
-                                    handled = true;
-                                    clearTimeout(timeout);
-                                    log("🟢 SUCCESS: Ο Relay " + relayUrl + " ΑΠΟΔΕΧΤΗΚΕ το μήνυμα!");
+                                    log("🟢 SUCCESS: Ο Relay ΑΠΟΔΕΧΤΗΚΕ το μήνυμα!");
                                     sentSuccessfully = true;
                                     document.getElementById("messageText").value = "";
-                                    socket.close();
-                                    resolve();
                                 } else {
                                     log("❌ Ο Relay απέρριψε το event: " + response[3]);
                                 }
+                                socket.close();
+                                resolve();
                             }
                         } catch (e) {
                             // Ignored
@@ -143,7 +159,7 @@
             }
 
             if (!sentSuccessfully) {
-                log("❌ Αποτυχία αποστολής σε όλους τους relays.");
+                log("❌ Αποτυχία αποστολής.");
             }
         }
     </script>
