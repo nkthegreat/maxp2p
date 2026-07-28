@@ -4,14 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
-    <!-- Φόρτωση του nostr-tools -->
-    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
         input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
         button { background-color: #3f51b5; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 15px; }
         button:hover { background-color: #303f9f; }
-        #log { background: #000; padding: 12px; height: 200px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
+        #log { background: #000; padding: 12px; height: 220px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
     </style>
 </head>
 <body>
@@ -23,7 +21,7 @@
     <label style="font-size: 13px; color: #aaa;">Message:</label>
     <textarea id="messageText" rows="3" placeholder="Γράψε μήνυμα για το κινητό..."></textarea>
 
-    <button onclick="sendMessage()">Send to Mobile App</button>
+    <button id="sendBtn" onclick="sendMessage()">Send to Mobile App</button>
 
     <h4 style="margin-top: 20px; font-size: 14px;">Console Logs:</h4>
     <div id="log">Status: Ready<br></div>
@@ -35,14 +33,7 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        // Λίστα με εναλλακτικούς Nostr Relays
-        const relays = [
-            'wss://relay.damus.io',
-            'wss://nos.lol',
-            'wss://relay.nostr.band'
-        ];
-
-        async function sendMessage() {
+        function sendMessage() {
             const targetAddress = document.getElementById("targetAddress").value.trim();
             const text = document.getElementById("messageText").value.trim();
 
@@ -52,73 +43,48 @@
             }
 
             log("<br>🔄 Έναρξη αποστολής...");
+            log("📡 Σύνδεση στο wss://relay.damus.io...");
 
-            // Παραγωγή προσωρινού Nostr KeyPair για τον Web Sender
-            const sk = window.NostrTools.generatePrivateKey();
-            const pk = window.NostrTools.getPublicKey(sk);
+            const socket = new WebSocket("wss://relay.damus.io");
 
-            const payload = JSON.stringify({
-                type: "OFFLINE_MSG",
-                data: text
-            });
+            socket.onopen = () => {
+                log("✅ Συνδέθηκε στον Nostr Relay!");
 
-            let event = {
-                kind: 4,
-                pubkey: pk,
-                created_at: Math.floor(Date.now() / 1000),
-                tags: [['p', targetAddress]],
-                content: payload
+                // Δημιουργία Payload για το Android App
+                const payload = JSON.stringify({
+                    type: "OFFLINE_MSG",
+                    data: text
+                });
+
+                // Παραγωγή τυχαίου pubkey 64 χαρακτήρων για τον Web Tester
+                const senderPubkey = Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
+                const event = [
+                    "EVENT",
+                    {
+                        kind: 4,
+                        pubkey: senderPubkey,
+                        created_at: Math.floor(Date.now() / 1000),
+                        tags: [["p", targetAddress]],
+                        content: payload
+                    }
+                ];
+
+                socket.send(JSON.stringify(event));
+                log("📤 Το μήνυμα στάλθηκε στον Relay για το ID: " + targetAddress);
+                log("🟢 SUCCESS: Ολοκληρώθηκε!");
+                
+                document.getElementById("messageText").value = "";
+                setTimeout(() => socket.close(), 1000);
             };
 
-            event.id = window.NostrTools.getEventHash(event);
-            event.sig = window.NostrTools.signEvent(event, sk);
+            socket.onerror = (err) => {
+                log("❌ Σφάλμα σύνδεσης με τον Relay. Ελέγξτε αν έχετε ad-blocker.");
+            };
 
-            let success = false;
-
-            // Δοκιμή σύνδεσης σε κάθε Relay στη σειρά
-            for (let relayUrl of relays) {
-                if (success) break;
-                log("📡 Σύνδεση στο: " + relayUrl);
-                
-                try {
-                    const relay = window.NostrTools.relayConnect(relayUrl);
-                    
-                    await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject("Timeout");
-                        }, 4000);
-
-                        relay.on('connect', () => {
-                            clearTimeout(timeout);
-                            log("✅ Συνδέθηκε στο " + relayUrl);
-                            
-                            let pub = relay.publish(event);
-                            pub.on('ok', () => {
-                                log("🟢 SUCCESS: Το μήνυμα εστάλη επιτυχώς!");
-                                success = true;
-                                resolve();
-                            });
-                            pub.on('failed', (reason) => {
-                                log("❌ Αποτυχία στο relay: " + reason);
-                                reject(reason);
-                            });
-                        });
-
-                        relay.on('error', () => {
-                            clearTimeout(timeout);
-                            reject("Error connecting");
-                        });
-                    });
-                } catch (e) {
-                    log("⚠️ Αποτυχία σύνδεσης στο " + relayUrl + ", δοκιμή επόμενου...");
-                }
-            }
-
-            if (!success) {
-                log("❌ Όλοι οι relays απέτυχαν. Ελέγξτε τη σύνδεσή σας.");
-            } else {
-                document.getElementById("messageText").value = "";
-            }
+            socket.onclose = () => {
+                log("🔌 Η σύνδεση έκλεισε.");
+            };
         }
     </script>
 </body>
