@@ -4,54 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
+    <!-- Φόρτωση Nostr Tools για έγκυρες ψηφιακές υπογραφές -->
+    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <style>
-        body { 
-            font-family: system-ui, -apple-system, sans-serif; 
-            max-width: 500px; 
-            margin: 30px auto; 
-            padding: 20px; 
-            background: #121212; 
-            color: #fff; 
-        }
-        input, textarea, button { 
-            width: 100%; 
-            margin-bottom: 12px; 
-            padding: 12px; 
-            box-sizing: border-box; 
-            border-radius: 8px; 
-            border: 1px solid #333; 
-            background: #1e1e1e; 
-            color: #fff; 
-        }
-        button { 
-            background-color: #3f51b5; 
-            color: white; 
-            border: none; 
-            font-weight: bold; 
-            cursor: pointer; 
-            font-size: 15px; 
-        }
-        button:hover { 
-            background-color: #303f9f; 
-        }
-        #log { 
-            background: #000; 
-            padding: 12px; 
-            height: 220px; 
-            overflow-y: scroll; 
-            font-family: monospace; 
-            font-size: 12px; 
-            border-radius: 8px; 
-            border: 1px solid #333; 
-            color: #00ff66; 
-        }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
+        input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
+        button { background-color: #3f51b5; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 15px; }
+        button:hover { background-color: #303f9f; }
+        #log { background: #000; padding: 12px; height: 240px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
     </style>
 </head>
 <body>
     <h2>MaxP2P Web Sender 🚀</h2>
-    
-    <label style="font-size: 13px; color: #aaa;">Your Web ID (Sender):</label>
-    <input type="text" id="webSenderAddress" value="0xWebTester123">
 
     <label style="font-size: 13px; color: #aaa;">Target Mobile Address (0x...):</label>
     <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ (0x...)">
@@ -71,30 +35,61 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        // Δημιουργία τυχαίου έγκυρου Nostr Private Key για τη σελίδα
+        const webPrivateKey = NostrTools.generatePrivateKey();
+        const webPublicKey = NostrTools.getPublicKey(webPrivateKey);
+
         const relays = [
             "wss://nos.lol",
             "wss://relay.damus.io",
-            "wss://relay.nostr.band",
-            "wss://purplepag.es"
+            "wss://relay.nostr.band"
         ];
 
+        function toNostrPubKey(address) {
+            let clean = address.trim().toLowerCase().replace(/^0x/, '');
+            return clean.padStart(64, '0');
+        }
+
         async function sendMessage() {
-            const senderAddress = document.getElementById("webSenderAddress").value.trim();
-            const targetAddress = document.getElementById("targetAddress").value.trim().toLowerCase();
+            const rawTarget = document.getElementById("targetAddress").value.trim();
             const text = document.getElementById("messageText").value.trim();
 
-            if (!targetAddress || !text) {
+            if (!rawTarget || !text) {
                 alert("Συμπλήρωσε το Target Address και το Μήνυμα!");
                 return;
             }
 
-            log("<br>🔄 Έναρξη αποστολής...");
+            const targetPubKey = toNostrPubKey(rawTarget);
+
+            log("<br>🔄 Προετοιμασία υπογεγραμμένου Nostr Event...");
+
+            // Δημιουργία payload & tags
+            const payload = JSON.stringify({
+                type: "OFFLINE_MSG",
+                data: text
+            });
+
+            // Δημιουργία & Ψηφιακή Υπογραφή του Event σύμφωνα με το Nostr Protocol
+            let event = {
+                kind: 4,
+                pubkey: webPublicKey,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [["p", targetPubKey]],
+                content: payload
+            };
+
+            event.id = NostrTools.getEventHash(event);
+            event.sig = NostrTools.signEvent(event, webPrivateKey);
+
+            log("🔑 Web PubKey: " + webPublicKey.substring(0, 10) + "...");
+            log("🎯 Target PubKey: " + targetPubKey.substring(0, 10) + "...");
+
             let sentSuccessfully = false;
 
             for (let relayUrl of relays) {
                 if (sentSuccessfully) break;
 
-                log("📡 Δοκιμή σύνδεσης στο " + relayUrl + "...");
+                log("📡 Δοκιμή αποστολής στο " + relayUrl + "...");
 
                 await new Promise((resolve) => {
                     const socket = new WebSocket(relayUrl);
@@ -107,54 +102,48 @@
                             socket.close();
                             resolve();
                         }
-                    }, 3000);
+                    }, 4000);
 
                     socket.onopen = () => {
-                        if (handled) return;
-                        handled = true;
-                        clearTimeout(timeout);
+                        // Αποστολή του υπογεγραμμένου Event
+                        socket.send(JSON.stringify(["EVENT", event]));
+                    };
 
-                        log("✅ Συνδέθηκε στο " + relayUrl);
-
-                        const payload = JSON.stringify({
-                            type: "OFFLINE_MSG",
-                            data: text
-                        });
-
-                        const event = [
-                            "EVENT",
-                            {
-                                kind: 4,
-                                pubkey: senderAddress,
-                                created_at: Math.floor(Date.now() / 1000),
-                                tags: [["p", targetAddress]],
-                                content: payload
+                    socket.onmessage = (msg) => {
+                        try {
+                            const response = JSON.parse(msg.data);
+                            // Έλεγχος αν ο Relay αποδέχτηκε το event (OK frame)
+                            if (response[0] === "OK" && response[1] === event.id) {
+                                if (response[2] === true) {
+                                    handled = true;
+                                    clearTimeout(timeout);
+                                    log("🟢 SUCCESS: Ο Relay " + relayUrl + " ΑΠΟΔΕΧΤΗΚΕ το μήνυμα!");
+                                    sentSuccessfully = true;
+                                    document.getElementById("messageText").value = "";
+                                    socket.close();
+                                    resolve();
+                                } else {
+                                    log("❌ Ο Relay απέρριψε το event: " + response[3]);
+                                }
                             }
-                        ];
-
-                        socket.send(JSON.stringify(event));
-                        log("📤 Το μήνυμα στάλθηκε από " + senderAddress + " για το " + targetAddress);
-                        log("🟢 SUCCESS: Ολοκληρώθηκε μέσω " + relayUrl);
-                        
-                        sentSuccessfully = true;
-                        document.getElementById("messageText").value = "";
-                        
-                        setTimeout(() => socket.close(), 1000);
-                        resolve();
+                        } catch (e) {
+                            // Ignored
+                        }
                     };
 
                     socket.onerror = () => {
-                        if (handled) return;
-                        handled = true;
-                        clearTimeout(timeout);
-                        log("❌ Αποτυχία σύνδεσης στο " + relayUrl);
-                        resolve();
+                        if (!handled) {
+                            handled = true;
+                            clearTimeout(timeout);
+                            log("❌ Αποτυχία σύνδεσης στο " + relayUrl);
+                            resolve();
+                        }
                     };
                 });
             }
 
             if (!sentSuccessfully) {
-                log("❌ Όλοι οι relays απέτυχαν. Ελέγξτε τη σύνδεσή σας.");
+                log("❌ Αποτυχία αποστολής σε όλους τους relays.");
             }
         }
     </script>
