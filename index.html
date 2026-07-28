@@ -4,26 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
+    <!-- Φόρτωση του nostr-tools -->
     <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <style>
-        body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; }
-        input, textarea, button { width: 100%; margin-bottom: 12px; padding: 10px; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
-        #log { background: #f4f4f4; padding: 10px; height: 180px; overflow-y: scroll; font-family: monospace; font-size: 12px; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
+        input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
+        button { background-color: #3f51b5; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 15px; }
+        button:hover { background-color: #303f9f; }
+        #log { background: #000; padding: 12px; height: 200px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
     </style>
 </head>
 <body>
     <h2>MaxP2P Web Sender 🚀</h2>
     
-    <label>Target Mobile Address (0x...):</label>
-    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ (π.χ. 0x...)">
+    <label style="font-size: 13px; color: #aaa;">Target Mobile Address (0x...):</label>
+    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ">
 
-    <label>Message:</label>
+    <label style="font-size: 13px; color: #aaa;">Message:</label>
     <textarea id="messageText" rows="3" placeholder="Γράψε μήνυμα για το κινητό..."></textarea>
 
     <button onclick="sendMessage()">Send to Mobile App</button>
 
-    <h4>Console Logs:</h4>
+    <h4 style="margin-top: 20px; font-size: 14px;">Console Logs:</h4>
     <div id="log">Status: Ready<br></div>
 
     <script>
@@ -33,53 +35,90 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        // Λίστα με εναλλακτικούς Nostr Relays
+        const relays = [
+            'wss://relay.damus.io',
+            'wss://nos.lol',
+            'wss://relay.nostr.band'
+        ];
+
         async function sendMessage() {
             const targetAddress = document.getElementById("targetAddress").value.trim();
-            const text = document.getElementById("messageText").value;
+            const text = document.getElementById("messageText").value.trim();
 
             if (!targetAddress || !text) {
                 alert("Συμπλήρωσε το Target Address και το Μήνυμα!");
                 return;
             }
 
-            log("🔄 Connecting to relay...");
-            const relay = window.NostrTools.relayConnect('wss://relay.damus.io');
+            log("<br>🔄 Έναρξη αποστολής...");
 
-            relay.on('connect', async () => {
-                log("✅ Connected to Nostr Relay!");
+            // Παραγωγή προσωρινού Nostr KeyPair για τον Web Sender
+            const sk = window.NostrTools.generatePrivateKey();
+            const pk = window.NostrTools.getPublicKey(sk);
 
-                // Παραγωγή προσωρινού κλειδιού για τον Web Sender
-                const sk = window.NostrTools.generatePrivateKey();
-                const pk = window.NostrTools.getPublicKey(sk);
-
-                const payload = JSON.stringify({
-                    type: "OFFLINE_MSG",
-                    data: text
-                });
-
-                let event = {
-                    kind: 4,
-                    pubkey: pk,
-                    created_at: Math.floor(Date.now() / 1000),
-                    tags: [['p', targetAddress]],
-                    content: payload
-                };
-
-                event.id = window.NostrTools.getEventHash(event);
-                event.sig = window.NostrTools.signEvent(event, sk);
-
-                let pub = relay.publish(event);
-                pub.on('ok', () => {
-                    log("🟢 SUCCESS: Το μήνυμα στάλθηκε στο κινητό: " + targetAddress);
-                });
-                pub.on('failed', (reason) => {
-                    log("❌ FAILED: " + reason);
-                });
+            const payload = JSON.stringify({
+                type: "OFFLINE_MSG",
+                data: text
             });
 
-            relay.on('error', () => {
-                log("❌ Connection Error with Relay");
-            });
+            let event = {
+                kind: 4,
+                pubkey: pk,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [['p', targetAddress]],
+                content: payload
+            };
+
+            event.id = window.NostrTools.getEventHash(event);
+            event.sig = window.NostrTools.signEvent(event, sk);
+
+            let success = false;
+
+            // Δοκιμή σύνδεσης σε κάθε Relay στη σειρά
+            for (let relayUrl of relays) {
+                if (success) break;
+                log("📡 Σύνδεση στο: " + relayUrl);
+                
+                try {
+                    const relay = window.NostrTools.relayConnect(relayUrl);
+                    
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject("Timeout");
+                        }, 4000);
+
+                        relay.on('connect', () => {
+                            clearTimeout(timeout);
+                            log("✅ Συνδέθηκε στο " + relayUrl);
+                            
+                            let pub = relay.publish(event);
+                            pub.on('ok', () => {
+                                log("🟢 SUCCESS: Το μήνυμα εστάλη επιτυχώς!");
+                                success = true;
+                                resolve();
+                            });
+                            pub.on('failed', (reason) => {
+                                log("❌ Αποτυχία στο relay: " + reason);
+                                reject(reason);
+                            });
+                        });
+
+                        relay.on('error', () => {
+                            clearTimeout(timeout);
+                            reject("Error connecting");
+                        });
+                    });
+                } catch (e) {
+                    log("⚠️ Αποτυχία σύνδεσης στο " + relayUrl + ", δοκιμή επόμενου...");
+                }
+            }
+
+            if (!success) {
+                log("❌ Όλοι οι relays απέτυχαν. Ελέγξτε τη σύνδεσή σας.");
+            } else {
+                document.getElementById("messageText").value = "";
+            }
         }
     </script>
 </body>
