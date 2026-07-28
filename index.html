@@ -5,11 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 500px; margin: 30px auto; padding: 20px; background: #121212; color: #fff; }
-        input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; }
-        button { background-color: #3f51b5; color: white; border: none; font-weight: bold; cursor: pointer; font-size: 15px; }
-        button:hover { background-color: #303f9f; }
-        #log { background: #000; padding: 12px; height: 220px; overflow-y: scroll; font-family: monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; color: #00ff66; }
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            max-width: 500px; 
+            margin: 30px auto; 
+            padding: 20px; 
+            background: #121212; 
+            color: #fff; 
+        }
+        input, textarea, button { 
+            width: 100%; 
+            margin-bottom: 12px; 
+            padding: 12px; 
+            box-sizing: border-box; 
+            border-radius: 8px; 
+            border: 1px solid #333; 
+            background: #1e1e1e; 
+            color: #fff; 
+        }
+        button { 
+            background-color: #3f51b5; 
+            color: white; 
+            border: none; 
+            font-weight: bold; 
+            cursor: pointer; 
+            font-size: 15px; 
+        }
+        button:hover { 
+            background-color: #303f9f; 
+        }
+        #log { 
+            background: #000; 
+            padding: 12px; 
+            height: 220px; 
+            overflow-y: scroll; 
+            font-family: monospace; 
+            font-size: 12px; 
+            border-radius: 8px; 
+            border: 1px solid #333; 
+            color: #00ff66; 
+        }
     </style>
 </head>
 <body>
@@ -19,7 +54,7 @@
     <input type="text" id="webSenderAddress" value="0xWebTester123">
 
     <label style="font-size: 13px; color: #aaa;">Target Mobile Address (0x...):</label>
-    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ">
+    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ (0x...)">
 
     <label style="font-size: 13px; color: #aaa;">Message:</label>
     <textarea id="messageText" rows="3" placeholder="Γράψε μήνυμα για το κινητό..."></textarea>
@@ -36,11 +71,6 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        function toNostrPubKey(address) {
-            let clean = address.trim().toLowerCase().replace(/^0x/, '');
-            return clean.padStart(64, '0');
-        }
-
         const relays = [
             "wss://nos.lol",
             "wss://relay.damus.io",
@@ -49,17 +79,14 @@
         ];
 
         async function sendMessage() {
-            const rawSender = document.getElementById("webSenderAddress").value;
-            const rawTarget = document.getElementById("targetAddress").value;
+            const senderAddress = document.getElementById("webSenderAddress").value.trim();
+            const targetAddress = document.getElementById("targetAddress").value.trim().toLowerCase();
             const text = document.getElementById("messageText").value.trim();
 
-            if (!rawTarget || !text) {
+            if (!targetAddress || !text) {
                 alert("Συμπλήρωσε το Target Address και το Μήνυμα!");
                 return;
             }
-
-            const senderPubKey = toNostrPubKey(rawSender);
-            const targetPubKey = toNostrPubKey(rawTarget);
 
             log("<br>🔄 Έναρξη αποστολής...");
             let sentSuccessfully = false;
@@ -98,15 +125,15 @@
                             "EVENT",
                             {
                                 kind: 4,
-                                pubkey: senderPubKey,
+                                pubkey: senderAddress,
                                 created_at: Math.floor(Date.now() / 1000),
-                                tags: [["p", targetPubKey]],
+                                tags: [["p", targetAddress]],
                                 content: payload
                             }
                         ];
 
                         socket.send(JSON.stringify(event));
-                        log("📤 Το μήνυμα στάλθηκε επιτυχώς!");
+                        log("📤 Το μήνυμα στάλθηκε από " + senderAddress + " για το " + targetAddress);
                         log("🟢 SUCCESS: Ολοκληρώθηκε μέσω " + relayUrl);
                         
                         sentSuccessfully = true;
@@ -127,7 +154,7 @@
             }
 
             if (!sentSuccessfully) {
-                log("❌ Όλοι οι relays απέτυχαν.");
+                log("❌ Όλοι οι relays απέτυχαν. Ελέγξτε τη σύνδεσή σας.");
             }
         }
     </script>
