@@ -4,21 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Web Tester</title>
+    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <style>
         body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; }
         input, textarea, button { width: 100%; margin-bottom: 12px; padding: 10px; box-sizing: border-box; }
         button { background-color: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
-        #log { background: #f4f4f4; padding: 10px; height: 150px; overflow-y: scroll; font-family: monospace; font-size: 12px; }
+        #log { background: #f4f4f4; padding: 10px; height: 180px; overflow-y: scroll; font-family: monospace; font-size: 12px; }
     </style>
 </head>
 <body>
     <h2>MaxP2P Web Sender 🚀</h2>
     
-    <label>Your Web Sender ID:</label>
-    <input type="text" id="myAddress" value="0xWebTester123">
-
     <label>Target Mobile Address (0x...):</label>
-    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ">
+    <input type="text" id="targetAddress" placeholder="Επικόλλησε το ID του κινητού εδώ (π.χ. 0x...)">
 
     <label>Message:</label>
     <textarea id="messageText" rows="3" placeholder="Γράψε μήνυμα για το κινητό..."></textarea>
@@ -26,29 +24,17 @@
     <button onclick="sendMessage()">Send to Mobile App</button>
 
     <h4>Console Logs:</h4>
-    <div id="log">Connecting to Nostr Relay...<br></div>
+    <div id="log">Status: Ready<br></div>
 
     <script>
-        const relayUrl = "wss://relay.damus.io";
-        let socket = new WebSocket(relayUrl);
-
         function log(text) {
             const logDiv = document.getElementById("log");
             logDiv.innerHTML += text + "<br>";
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        socket.onopen = () => {
-            log("✅ Connected to Nostr Relay!");
-        };
-
-        socket.onerror = (err) => {
-            log("❌ WebSocket Error: " + JSON.stringify(err));
-        };
-
-        function sendMessage() {
-            const myAddress = document.getElementById("myAddress").value;
-            const targetAddress = document.getElementById("targetAddress").value;
+        async function sendMessage() {
+            const targetAddress = document.getElementById("targetAddress").value.trim();
             const text = document.getElementById("messageText").value;
 
             if (!targetAddress || !text) {
@@ -56,25 +42,44 @@
                 return;
             }
 
-            const payload = JSON.stringify({
-                type: "OFFLINE_MSG",
-                data: text
+            log("🔄 Connecting to relay...");
+            const relay = window.NostrTools.relayConnect('wss://relay.damus.io');
+
+            relay.on('connect', async () => {
+                log("✅ Connected to Nostr Relay!");
+
+                // Παραγωγή προσωρινού κλειδιού για τον Web Sender
+                const sk = window.NostrTools.generatePrivateKey();
+                const pk = window.NostrTools.getPublicKey(sk);
+
+                const payload = JSON.stringify({
+                    type: "OFFLINE_MSG",
+                    data: text
+                });
+
+                let event = {
+                    kind: 4,
+                    pubkey: pk,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [['p', targetAddress]],
+                    content: payload
+                };
+
+                event.id = window.NostrTools.getEventHash(event);
+                event.sig = window.NostrTools.signEvent(event, sk);
+
+                let pub = relay.publish(event);
+                pub.on('ok', () => {
+                    log("🟢 SUCCESS: Το μήνυμα στάλθηκε στο κινητό: " + targetAddress);
+                });
+                pub.on('failed', (reason) => {
+                    log("❌ FAILED: " + reason);
+                });
             });
 
-            const nostrEvent = [
-                "EVENT",
-                {
-                    kind: 4,
-                    pubkey: myAddress,
-                    created_at: Math.floor(Date.now() / 1000),
-                    tags: [["p", targetAddress]],
-                    content: payload
-                }
-            ];
-
-            socket.send(JSON.stringify(nostrEvent));
-            log("📤 Sent message to: " + targetAddress);
-            document.getElementById("messageText").value = "";
+            relay.on('error', () => {
+                log("❌ Connection Error with Relay");
+            });
         }
     </script>
 </body>
