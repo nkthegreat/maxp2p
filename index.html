@@ -78,10 +78,12 @@
         let relayUrl = "";
         let myAddress = "";
         let peerKey = "";
+        let currentPrivateKey = ""; // Αποθήκευση private key για την υπογραφή
 
         function generateNewWallet() {
             const wallet = ethers.Wallet.createRandom();
             myAddress = wallet.address;
+            currentPrivateKey = wallet.privateKey.replace("0x", ""); // Αποθήκευση σε hex χωρίς 0x
             document.getElementById('input-my-key').value = myAddress;
             alert("Επιτυχής δημιουργία διεύθυνσης: " + myAddress);
         }
@@ -136,13 +138,24 @@
             }
 
             try {
-                const event = {
+                // Δημιουργία αντικειμένου event
+                let event = {
                     kind: 1,
                     created_at: Math.floor(Date.now() / 1000),
                     tags: [["p", peerKey]],
                     content: text,
                     pubkey: myAddress.replace("0x", "").toLowerCase()
                 };
+
+                // Αν έχουμε αποθηκευμένο private key από τη δημιουργία, υπογράφουμε κανονικά το event
+                if (currentPrivateKey) {
+                    event.id = NostrTools.getEventHash(event);
+                    event.sig = NostrTools.signEvent(event, currentPrivateKey);
+                } else {
+                    // Fallback αν έγινε απλή επικόλληση διεύθυνσης χωρίς γεννήτρια
+                    event.id = NostrTools.getEventHash(event);
+                    event.sig = "dummy_signature_for_testing"; 
+                }
 
                 const pubs = pool.publish([relayUrl], event);
                 await Promise.all(pubs);
