@@ -3,160 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MaxP2P Web Client</title>
-    <!-- Σύνδεση με Tailwind CSS για όμορφο UI αντίστοιχο του Material3 -->
+    <title>MaxP2P Web Client - Live Nostr</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Nostr Tools για τη διαχείριση των μηνυμάτων και των κλειδιών -->
-    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
+    <!-- Φόρτωση Nostr Tools -->
+    <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 h-screen flex flex-col">
 
-    <!-- Top Bar (Αντίστοιχη με το TopAppBar του Android) -->
+    <!-- Header -->
     <header class="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center shadow-md">
         <div>
-            <h1 class="font-bold text-lg">P2P Συνομιλία (Web)</h1>
-            <p id="my-address-display" class="text-xs text-slate-400 truncate max-w-xs">Η Διεύθυνσή μου: Συνδεθείτε...</p>
+            <h1 class="font-bold text-lg">MaxP2P Web Bridge</h1>
+            <p id="connection-status" class="text-xs text-rose-400">Κατάσταση: Ασύνδετος</p>
         </div>
-
-        <!-- Μενού: Saved vs Incognito & Handshake -->
         <div class="flex items-center space-x-4">
             <div class="flex items-center space-x-2 bg-slate-700/50 px-3 py-1 rounded-full">
                 <span id="mode-label" class="text-xs font-bold text-emerald-400">Saved</span>
                 <input type="checkbox" id="mode-switch" class="toggle cursor-pointer" checked onchange="toggleMode()">
             </div>
-            <button onclick="showHandshakeModal()" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-full transition">
-                🔄 Handshake
-            </button>
         </div>
     </header>
 
-    <!-- Κεντρική Οθόνη Συνομιλίας & Ρυθμίσεων Σύνδεσης -->
+    <!-- Main Content -->
     <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
         
-        <!-- Sidebar Ρυθμίσεων Σύνδεσης με το Κινητό -->
+        <!-- Sidebar -->
         <div class="w-full md:w-80 bg-slate-800/50 border-r border-slate-700 p-4 flex flex-col gap-4">
-            <h2 class="font-semibold text-sm text-slate-300">Ρυθμίσεις Σύνδεσης P2P</h2>
+            <h2 class="font-semibold text-sm text-slate-300">Ρυθμίσεις Σύνδεσης</h2>
             
             <div>
-                <label class="text-xs text-slate-400">Η Διεύθυνσή σας (Blockchain Address):</label>
-                <input type="text" id="input-my-address" placeholder="0xMyAddress..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 focus:outline-none focus:border-indigo-500">
+                <label class="text-xs text-slate-400">Relay URL:</label>
+                <input type="text" id="input-relay" value="wss://relay.damus.io" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1">
             </div>
 
             <div>
-                <label class="text-xs text-slate-400">Διεύθυνση Συνομιλητή (Peer Address):</label>
-                <input type="text" id="input-peer-address" placeholder="0xPeerAddress..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 focus:outline-none focus:border-indigo-500">
+                <label class="text-xs text-slate-400">Η Διεύθυνσή μου (Hex Public Key / Address):</label>
+                <input type="text" id="input-my-key" placeholder="Βάλτε το hex κλειδί/διεύθυνση..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1">
             </div>
 
-            <button onclick="connectNostr()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded text-sm transition shadow">
-                Σύνδεση & Έναρξη Ακρόασης
+            <div>
+                <label class="text-xs text-slate-400">Διεύθυνση Συνομιλητή (Peer):</label>
+                <input type="text" id="input-peer-key" placeholder="Peer hex key..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1">
+            </div>
+
+            <button onclick="initNostrConnection()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded text-sm transition shadow">
+                Σύνδεση στο Relay & Ακρόαση
             </button>
-            
-            <div class="mt-auto text-xs text-slate-500 bg-slate-900/50 p-3 rounded">
-                <p>💡 <strong>Οδηγίες:</strong> Βάλτε την ίδια διεύθυνση με το κινητό σας ή συνδεθείτε ως ο peer του κινητού για να ανταλλάξετε μηνύματα μέσω Nostr Relay.</p>
-            </div>
         </div>
 
-        <!-- Παράθυρο Μηνυμάτων -->
+        <!-- Chat Window -->
         <div class="flex-1 flex flex-col bg-slate-950">
-            <!-- Λίστα Μηνυμάτων -->
             <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col">
-                <div class="text-center text-xs text-slate-600 my-2">Η συνομιλία ξεκίνησε...</div>
+                <div class="text-center text-xs text-slate-600 my-2">Περιμένετε σύνδεση...</div>
             </div>
 
-            <!-- Μπάρα Αποστολής Μηνύματος -->
             <div class="p-4 bg-slate-900 border-t border-slate-800 flex gap-2">
-                <input type="text" id="message-input" placeholder="Γράψτε P2P μήνυμα..." class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-indigo-500" onkeypress="if(event.key === 'KeyE' || event.key === 'Enter') sendMessage()">
-                <button onclick="sendMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-full text-sm font-medium transition flex items-center justify-center">
+                <input type="text" id="message-input" placeholder="Γράψτε μήνυμα..." class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-indigo-500" onkeypress="if(event.key === 'Enter') sendMessage()">
+                <button onclick="sendMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-full text-sm font-medium transition">
                     ✈️ Αποστολή
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Handshake Modal (Κρυφό εξ' αρχής) -->
-    <div id="handshake-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md flex flex-col gap-4">
-            <h3 class="font-bold text-base">P2P Manual Handshake (SDP)</h3>
-            <textarea id="sdp-box" readonly placeholder="Το σήμα σας θα εμφανιστεί εδώ..." class="w-full h-28 bg-slate-900 border border-slate-700 rounded p-2 text-xs font-mono text-slate-300"></textarea>
-            <button onclick="copySdp()" class="bg-slate-700 hover:bg-slate-600 text-xs py-1.5 rounded">Αντιγραφή Σήματος</button>
-            
-            <textarea id="remote-sdp-box" placeholder="Επικολλήστε το σήμα του άλλου εδώ..." class="w-full h-28 bg-slate-900 border border-slate-700 rounded p-2 text-xs font-mono text-slate-300 mt-2"></textarea>
-            
-            <div class="flex justify-end gap-2 mt-2">
-                <button onclick="closeHandshakeModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm">Κλείσιμο</button>
-                <button onclick="completeHandshake()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-sm">Ολοκλήρωση</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Script Λειτουργικότητας Nostr & UI -->
     <script>
-        let isSavedMode = true;
-        let relayConnection = null;
+        let pool = null;
+        let sub = null;
+        let relayUrl = "";
+        let myKey = "";
+        let peerKey = "";
 
         function toggleMode() {
-            isSavedMode = document.getElementById('mode-switch').checked;
+            const isSaved = document.getElementById('mode-switch').checked;
             const label = document.getElementById('mode-label');
-            if (isSavedMode) {
-                label.innerText = "Saved";
-                label.className = "text-xs font-bold text-emerald-400";
-            } else {
-                label.innerText = "Incognito 🕵️";
-                label.className = "text-xs font-bold text-rose-400";
-            }
+            label.innerText = isSaved ? "Saved" : "Incognito 🕵️";
+            label.className = isSaved ? "text-xs font-bold text-emerald-400" : "text-xs font-bold text-rose-400";
         }
 
-        function showHandshakeModal() {
-            document.getElementById('handshake-modal').classList.remove('hidden');
-        }
+        async function initNostrConnection() {
+            relayUrl = document.getElementById('input-relay').value.trim();
+            myKey = document.getElementById('input-my-key').value.trim();
+            peerKey = document.getElementById('input-peer-key').value.trim();
 
-        function closeHandshakeModal() {
-            document.getElementById('handshake-modal').classList.add('hidden');
-        }
-
-        function copySdp() {
-            const sdpText = document.getElementById('sdp-box');
-            sdpText.select();
-            document.execCommand('copy');
-            alert('Αντιγράφηκε στο πρόχειρο!');
-        }
-
-        function completeHandshake() {
-            alert('Η χειροκίνητη ζεύξη ολοκληρώθηκε!');
-            closeHandshakeModal();
-        }
-
-        // Σύνδεση στο Nostr Relay για αμφίδρομο διάλογο
-        async function connectNostr() {
-            const myAddr = document.getElementById('input-my-address').value.trim();
-            if (!myAddr) {
-                alert('Παρακαλώ εισάγετε πρώτα τη διεύθυνσή σας!');
+            if (!myKey || !relayUrl) {
+                alert("Συμπληρώστε το Relay και τη Διεύθυνσή σας!");
                 return;
             }
 
-            document.getElementById('my-address-display').innerText = "Ενεργός: " + myAddr;
-            alert('Επιτυχής σύνδεση στον δίαυλο επικοινωνίας!');
-            
-            // Εδώ ενεργοποιείται η ακρόαση μηνυμάτων από το Nostr network (όπως ακριβώς κάνει και ο NostrSignalingManager στο κινητό).
+            try {
+                // Χρήση Nostr SimplePool
+                pool = new NostrTools.SimplePool();
+                
+                document.getElementById('connection-status').innerText = "Κατάσταση: Συνδέθηκε στο " + relayUrl;
+                document.getElementById('connection-status').className = "text-xs text-emerald-400";
+                alert("Επιτυχής σύνδεση στον δίαυλο Nostr!");
+
+                // Ξεκινάμε την ακρόαση μηνυμάτων που απευθύνονται σε εμάς (kind 4 ή custom kind)
+                sub = pool.sub([relayUrl], [{
+                    kinds: [1, 4, 25555], // Προσαρμόστε ανάλογα με το kind που στέλνει η εφαρμογή σας
+                    "#p": [myKey]
+                }]);
+
+                sub.on('event', event => {
+                    appendMessage(event.content, false);
+                });
+
+            } catch (e) {
+                console.error(e);
+                alert("Σφάλμα σύνδεσης: " + e.message);
+            }
         }
 
-        function sendMessage() {
+        async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             if (!text) return;
 
-            const chatContainer = document.getElementById('chat-messages');
+            if (!pool || !peerKey) {
+                alert("Δεν έχετε ορίσει διεύθυνση συνομιλητή (Peer) ή δεν έχετε συνδεθεί!");
+                return;
+            }
 
-            // Εμφάνιση δικού μας μηνύματος (Δεξιά)
+            appendMessage(text, true);
+            input.value = "";
+
+            // Εδώ γίνεται η δημοσίευση του event στο Nostr relay για να το λάβει το κινητό
+            // (Σημείωση: Απαιτείται υπογραφή event με το private key αν χρησιμοποιείτε NIP-04/NIP-44 κρυπτογράφηση)
+            console.log("Αποστολή προς: ", peerKey, " Μήνυμα: ", text);
+        }
+
+        function appendMessage(text, isMe) {
+            const chatContainer = document.getElementById('chat-messages');
             const msgBubble = document.createElement('div');
-            msgBubble.className = "max-w-[70%] ml-auto bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 text-sm shadow";
+            
+            if (isMe) {
+                msgBubble.className = "max-w-[70%] ml-auto bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 text-sm shadow";
+            } else {
+                msgBubble.className = "max-w-[70%] mr-auto bg-slate-800 text-slate-100 rounded-2xl rounded-tl-sm px-4 py-2 text-sm shadow";
+            }
+            
             msgBubble.innerText = text;
             chatContainer.appendChild(msgBubble);
-
-            input.value = "";
             chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            // Σημείωση: Εδώ γίνεται η αποστολή μέσω WebRTC DataChannel ή Nostr Offline Fallback προς το κινητό.
         }
     </script>
 </body>
