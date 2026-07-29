@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MaxP2P Web - Δημιουργία & Σύνδεση</title>
+    <title>MaxP2P Web Client</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Nostr Tools -->
     <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
-    <!-- Ethers.js για την αυτόματη δημιουργία Ethereum / Blockchain διευθύνσεων όπως στο κινητό -->
+    <!-- Ethers.js για δημιουργία διεύθυνσης ακριβώς όπως στο κινητό -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 h-screen flex flex-col">
@@ -15,7 +15,7 @@
     <!-- Header -->
     <header class="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center shadow-md">
         <div>
-            <h1 class="font-bold text-lg">MaxP2P Web Wallet & Bridge</h1>
+            <h1 class="font-bold text-lg">MaxP2P Web Bridge</h1>
             <p id="connection-status" class="text-xs text-rose-400">Κατάσταση: Ασύνδετος</p>
         </div>
         <div class="flex items-center space-x-4">
@@ -31,11 +31,10 @@
         
         <!-- Sidebar -->
         <div class="w-full md:w-90 bg-slate-800/50 border-r border-slate-700 p-4 flex flex-col gap-4">
-            <h2 class="font-semibold text-sm text-slate-300">Διαχείριση Ταυτότητας & Σύνδεσης</h2>
+            <h2 class="font-semibold text-sm text-slate-300">Ρυθμίσεις & Ταυτότητα</h2>
             
-            <!-- Κουμπι Δημιουργίας Διεύθυνσης (Όπως στο κινητό) -->
             <button onclick="generateNewWallet()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 rounded text-sm transition shadow flex items-center justify-center gap-2">
-                🔑 Δημιουργία Νέας Διεύθυνσης (Wallet)
+                🔑 Δημιουργία Νέας Διεύθυνσης
             </button>
 
             <div>
@@ -54,14 +53,14 @@
             </div>
 
             <button onclick="initNostrConnection()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded text-sm transition shadow mt-2">
-                Σύνδεση στο Relay & Έναρξη
+                Σύνδεση στο Relay & Ακρόαση
             </button>
         </div>
 
         <!-- Chat Window -->
         <div class="flex-1 flex flex-col bg-slate-950">
             <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col">
-                <div class="text-center text-xs text-slate-600 my-2">Δημιουργήστε ταυτότητα και συνδεθείτε...</div>
+                <div class="text-center text-xs text-slate-600 my-2">Η συνομιλία είναι έτοιμη...</div>
             </div>
 
             <div class="p-4 bg-slate-900 border-t border-slate-800 flex gap-2">
@@ -80,16 +79,11 @@
         let myAddress = "";
         let peerKey = "";
 
-        // Συνάρτηση αυτόματης δημιουργίας κλειδιού/διεύθυνσης (Όπως το κινητό)
         function generateNewWallet() {
-            // Δημιουργία τυχαίου κρυπτογραφικού πορτοφολιού (Secp256k1 / Ethereum format)
             const wallet = ethers.Wallet.createRandom();
-            myAddress = wallet.address; // Η διεύθυνση 0x...
-            
+            myAddress = wallet.address;
             document.getElementById('input-my-key').value = myAddress;
-            
-            alert("Επιτυχής δημιουργία νέας διεύθυνσης!\n\nΔιεύθυνση: " + myAddress + "\n\n(Αποθηκεύστε το ιδιωτικό σας κλειδί ασφαλείας αν χρειαστεί: " + wallet.privateKey + ")");
-            console.log("Private Key:", wallet.privateKey);
+            alert("Επιτυχής δημιουργία διεύθυνσης: " + myAddress);
         }
 
         function toggleMode() {
@@ -105,18 +99,17 @@
             peerKey = document.getElementById('input-peer-key').value.trim();
 
             if (!myAddress || !relayUrl) {
-                alert("δημιουργήστε ή βάλτε τη διεύθυνσή σας και το Relay!");
+                alert("Συμπληρώστε τη διεύθυνσή σας και το Relay!");
                 return;
             }
 
             try {
                 pool = new NostrTools.SimplePool();
                 
-                document.getElementById('connection-status').innerText = "Κατάσταση: Συνδέθηκε";
+                document.getElementById('connection-status').innerText = "Κατάσταση: Συνδεδεμένο";
                 document.getElementById('connection-status').className = "text-xs text-emerald-400";
-                alert("Συνδεθήκατε επιτυχώς στο δίκτυο με τη διεύθυνση: " + myAddress);
+                alert("Επιτυχής σύνδεση στο Nostr relay!");
 
-                // Παρακολούθηση μηνυμάτων για τη διεύθυνσή μας
                 sub = pool.sub([relayUrl], [{
                     kinds: [1, 4, 25555],
                     "#p": [myAddress]
@@ -128,7 +121,7 @@
 
             } catch (e) {
                 console.error(e);
-                alert("Σφάλμα: " + e.message);
+                alert("Σφάλμα σύνδεσης: " + e.message);
             }
         }
 
@@ -137,14 +130,29 @@
             const text = input.value.trim();
             if (!text) return;
 
-            if (!pool) {
-                alert("Δεν έχετε συνδεθεί στο δίκτυο!");
+            if (!pool || !peerKey) {
+                alert("Συνδεθείτε και ορίστε τη διεύθυνση του συνομιλητή (Peer Address)!");
                 return;
             }
 
-            appendMessage(text, true);
-            input.value = "";
-            console.log("Αποστολή μηνύματος:", text);
+            try {
+                const event = {
+                    kind: 1,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [["p", peerKey]],
+                    content: text,
+                    pubkey: myAddress.replace("0x", "").toLowerCase()
+                };
+
+                const pubs = pool.publish([relayUrl], event);
+                await Promise.all(pubs);
+                
+                appendMessage(text, true);
+                input.value = "";
+            } catch (e) {
+                console.error("Σφάλμα αποστολής:", e);
+                alert("Αποτυχία αποστολής: " + e.message);
+            }
         }
 
         function appendMessage(text, isMe) {
