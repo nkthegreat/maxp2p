@@ -133,18 +133,16 @@
             if (!text) return;
 
             let rawPeerKey = document.getElementById('input-peer-key').value.trim();
-            if (!pool || !rawPeerKey || !myPrivkey) {
-                alert("Δημιουργήστε ταυτότητα, συνδεθείτε και ορίστε το Peer Key!");
+            if (!relayUrl || !rawPeerKey || !myPrivkey) {
+                alert("Συνδεθείτε, ορίστε το Peer Key και δημιουργήστε ταυτότητα!");
                 return;
             }
 
-            // Καθαρισμός και μετατροπή σε καθαρό hex 64 χαρακτήρων
-            let cleanPeerKey = rawPeerKey.replace("0x", "").toLowerCase().trim();
-            if (cleanPeerKey.length < 64) {
-                cleanPeerKey = cleanPeerKey.padStart(64, '0'); // Συμπλήρωση αν λείπουν ψηφία για δοκιμή
-            }
-
             try {
+                // Καθαρισμός κλειδιού
+                let cleanPeerKey = rawPeerKey.replace("0x", "").toLowerCase().trim();
+
+                // 1. Δημιουργία υπογεγραμμένου event κανονικά
                 let event = {
                     kind: 1,
                     pubkey: myPubkey,
@@ -156,12 +154,21 @@
                 event.id = NostrTools.getEventHash(event);
                 event.sig = NostrTools.signEvent(event, myPrivkey);
 
-                const pubs = pool.publish([relayUrl], event);
-                await Promise.all(pubs);
-                
-                appendMessage(text, true);
-                input.value = "";
-                console.log("Το μήνυμα στάλθηκε επιτυχώς!");
+                // 2. Αποστολή απευθείας μέσω WebSocket παρακάμπτοντας τους ελέγχους του pool.publish
+                const ws = new WebSocket(relayUrl);
+                ws.onopen = function() {
+                    ws.send(JSON.stringify(["EVENT", event]));
+                    ws.close();
+                    
+                    appendMessage(text, true);
+                    input.value = "";
+                    console.log("Το υπογεγραμμένο μήνυμα στάλθηκε απευθείας στο relay!");
+                };
+                ws.onerror = function(err) {
+                    console.error("WebSocket Error:", err);
+                    alert("Σφάλμα σύνδεσης WebSocket στο Relay.");
+                };
+
             } catch (e) {
                 console.error("Σφάλμα αποστολής:", e);
                 alert("Αποτυχία αποστολής: " + e.message);
