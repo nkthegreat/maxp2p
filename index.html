@@ -3,12 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MaxP2P Web Client</title>
+    <title>MaxP2P Web Bridge</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Nostr Tools -->
+    <!-- Nostr Tools v1.17.0 -->
     <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
-    <!-- Ethers.js για δημιουργία διεύθυνσης ακριβώς όπως στο κινητό -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 h-screen flex flex-col">
 
@@ -34,7 +32,7 @@
             <h2 class="font-semibold text-sm text-slate-300">Ρυθμίσεις & Ταυτότητα</h2>
             
             <button onclick="generateNewWallet()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 rounded text-sm transition shadow flex items-center justify-center gap-2">
-                🔑 Δημιουργία Νέας Διεύθυνσης
+                🔑 Δημιουργία Νέας Ταυτότητας Nostr
             </button>
 
             <div>
@@ -43,13 +41,13 @@
             </div>
 
             <div>
-                <label class="text-xs text-slate-400">Η Διεύθυνσή μου (Blockchain Address):</label>
-                <input type="text" id="input-my-key" placeholder="Δημιουργήστε ή εισάγετε..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs text-emerald-300">
+                <label class="text-xs text-slate-400">Το Δημόσιο Κλειδί μου (Public Key):</label>
+                <input type="text" id="input-my-pubkey" placeholder="Δημιουργήστε ταυτότητα..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs text-emerald-300">
             </div>
 
             <div>
-                <label class="text-xs text-slate-400">Διεύθυνση Συνομιλητή (Peer Address):</label>
-                <input type="text" id="input-peer-key" placeholder="0xPeerAddress..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs">
+                <label class="text-xs text-slate-400">Διεύθυνση Συνομιλητή (Peer Public Key):</label>
+                <input type="text" id="input-peer-key" placeholder="Peer hex key..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs">
             </div>
 
             <button onclick="initNostrConnection()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded text-sm transition shadow mt-2">
@@ -72,21 +70,21 @@
         </div>
     </div>
 
-<script>
+    <script>
         let pool = null;
         let sub = null;
         let relayUrl = "";
-        let myPubkey = "";
         let myPrivkey = "";
+        let myPubkey = "";
         let peerKey = "";
 
         function generateNewWallet() {
-            // Δημιουργία αυθεντικού Nostr keypair
+            // Αυθεντική δημιουργία Nostr κλειδιών σύμφωνα με το πρωτόκολλο
             myPrivkey = NostrTools.generatePrivateKey();
             myPubkey = NostrTools.getPublicKey(myPrivkey);
             
-            document.getElementById('input-my-key').value = myPubkey;
-            alert("Επιτυχής δημιουργία Nostr Public Key:\n\n" + myPubkey);
+            document.getElementById('input-my-pubkey').value = myPubkey;
+            alert("Δημιουργήθηκε επιτυχώς η ταυτότητά σας!\n\nPubkey: " + myPubkey);
         }
 
         function toggleMode() {
@@ -98,11 +96,11 @@
 
         async function initNostrConnection() {
             relayUrl = document.getElementById('input-relay').value.trim();
-            myPubkey = document.getElementById('input-my-key').value.trim();
+            myPubkey = document.getElementById('input-my-pubkey').value.trim();
             peerKey = document.getElementById('input-peer-key').value.trim();
 
             if (!myPubkey || !relayUrl) {
-                alert("Συμπληρώστε τη διεύθυνσή σας και το Relay!");
+                alert("Συμπληρώστε το Δημόσιο Κλειδί σας και το Relay!");
                 return;
             }
 
@@ -113,6 +111,7 @@
                 document.getElementById('connection-status').className = "text-xs text-emerald-400";
                 alert("Επιτυχής σύνδεση στο Nostr relay!");
 
+                // Ακρόαση μηνυμάτων που έχουν το tag p με το δικό μας pubkey
                 sub = pool.sub([relayUrl], [{
                     kinds: [1, 4, 25555],
                     "#p": [myPubkey]
@@ -128,45 +127,38 @@
             }
         }
 
-      async function sendMessage() {
+        async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             if (!text) return;
 
-            let rawPeerKey = document.getElementById('input-peer-key').value.trim();
-            let myKeyVal = document.getElementById('input-my-key').value.trim();
-            
-            if (!relayUrl || !rawPeerKey || !myKeyVal) {
-                alert("Συμπληρώστε το Relay, τη Διεύθυνσή σας και τη Διεύθυνση Συνομιλητή!");
+            peerKey = document.getElementById('input-peer-key').value.trim();
+            if (!pool || !peerKey || !myPrivkey) {
+                alert("Δημιουργήστε ταυτότητα, συνδεθείτε και ορίστε το Peer Key!");
                 return;
             }
 
             try {
-                // Δημιουργία event με Kind 4 (το standard για chat) και τη δική σου διεύθυνση ως pubkey
-                const event = {
-                    kind: 4,
-                    pubkey: myKeyVal.replace("0x", "").toLowerCase(),
+                // Κατασκευή έγκυρου Nostr event
+                let event = {
+                    kind: 1,
+                    pubkey: myPubkey,
                     created_at: Math.floor(Date.now() / 1000),
-                    tags: [["p", rawPeerKey.replace("0x", "").toLowerCase()]],
-                    content: text,
-                    id: "0".repeat(64),
-                    sig: "0".repeat(128)
+                    tags: [["p", peerKey]],
+                    content: text
                 };
 
-                const ws = new WebSocket(relayUrl);
-                ws.onopen = function() {
-                    ws.send(JSON.stringify(["EVENT", event]));
-                    ws.close();
-                    
-                    appendMessage(text, true);
-                    input.value = "";
-                    console.log("Το μήνυμα Kind 4 στάλθηκε στο relay!");
-                };
-                ws.onerror = function(err) {
-                    console.error("WebSocket Error:", err);
-                    alert("Σφάλμα σύνδεσης WebSocket.");
-                };
+                // Υπολογισμός cryptographic hash και υπογραφή (απαραίτητο για να το δεχτεί το relay)
+                event.id = NostrTools.getEventHash(event);
+                event.sig = NostrTools.signEvent(event, myPrivkey);
 
+                // Δημοσίευση στο Relay
+                const pubs = pool.publish([relayUrl], event);
+                await Promise.all(pubs);
+                
+                appendMessage(text, true);
+                input.value = "";
+                console.log("Το μήνυμα υπογράφηκε και στάλθηκε επιτυχώς!");
             } catch (e) {
                 console.error("Σφάλμα αποστολής:", e);
                 alert("Αποτυχία αποστολής: " + e.message);
