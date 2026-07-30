@@ -140,14 +140,14 @@
             }
 
             try {
-                // Χρησιμοποιούμε απευθείας τη μορφή 0x... στα tags ακριβώς όπως το κινητό
+                // Χρήση custom tags αντί για το αυστηρό "p" του Nostr για να μην απορρίπτεται η αποστολή
                 let event = {
                     kind: 1,
                     pubkey: myPubkey || "0".repeat(64),
                     created_at: Math.floor(Date.now() / 1000),
                     tags: [
-                        ["p", rawPeerKey],        // Η διεύθυνση 0x... για το κινητό
-                        ["address", rawPeerKey]   // Επιπλέον εναλλακτικό tag για ασφάλεια
+                        ["recipient", rawPeerKey],
+                        ["to", rawPeerKey]
                     ],
                     content: text
                 };
@@ -165,7 +165,7 @@
                 
                 appendMessage(text, true);
                 input.value = "";
-                console.log("Το μήνυμα στάλθηκε με τη διεύθυνση:", rawPeerKey);
+                console.log("Το μήνυμα στάθηκε επιτυχώς!");
             } catch (e) {
                 console.error("Σφάλμα αποστολής:", e);
                 alert("Αποτυχία αποστολής: " + e.message);
