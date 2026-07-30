@@ -128,30 +128,31 @@
             }
         }
 
-       async function sendMessage() {
+      async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             if (!text) return;
 
             let rawPeerKey = document.getElementById('input-peer-key').value.trim();
-            if (!relayUrl || !rawPeerKey) {
-                alert("Συμπληρώστε το Relay και τη διεύθυνση του συνομιλητή!");
+            let myKeyVal = document.getElementById('input-my-key').value.trim();
+            
+            if (!relayUrl || !rawPeerKey || !myKeyVal) {
+                alert("Συμπληρώστε το Relay, τη Διεύθυνσή σας και τη Διεύθυνση Συνομιλητή!");
                 return;
             }
 
             try {
-                // Δημιουργία raw event με το κανονικό "p" tag που περιμένει το κινητό
+                // Δημιουργία event με Kind 4 (το standard για chat) και τη δική σου διεύθυνση ως pubkey
                 const event = {
-                    kind: 1,
-                    pubkey: myPubkey || "f0f8f644322123d1bb90669f3d1c6803d55f56a2453318e3ede019357671a61f",
+                    kind: 4,
+                    pubkey: myKeyVal.replace("0x", "").toLowerCase(),
                     created_at: Math.floor(Date.now() / 1000),
-                    tags: [["p", rawPeerKey]],
+                    tags: [["p", rawPeerKey.replace("0x", "").toLowerCase()]],
                     content: text,
                     id: "0".repeat(64),
                     sig: "0".repeat(128)
                 };
 
-                // Απευθείας αποστολή μέσω WebSocket στο Relay παρακάμπτοντας τους ελέγχους του nostr-tools
                 const ws = new WebSocket(relayUrl);
                 ws.onopen = function() {
                     ws.send(JSON.stringify(["EVENT", event]));
@@ -159,11 +160,11 @@
                     
                     appendMessage(text, true);
                     input.value = "";
-                    console.log("Το μήνυμα στάλθηκε κατευθείαν στο relay!");
+                    console.log("Το μήνυμα Kind 4 στάλθηκε στο relay!");
                 };
                 ws.onerror = function(err) {
                     console.error("WebSocket Error:", err);
-                    alert("Σφάλμα σύνδεσης WebSocket στο Relay.");
+                    alert("Σφάλμα σύνδεσης WebSocket.");
                 };
 
             } catch (e) {
