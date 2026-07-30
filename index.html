@@ -72,20 +72,21 @@
         </div>
     </div>
 
-    <script>
+<script>
         let pool = null;
         let sub = null;
         let relayUrl = "";
-        let myAddress = "";
+        let myPubkey = "";
+        let myPrivkey = "";
         let peerKey = "";
-        let currentPrivateKey = ""; // Αποθήκευση private key για την υπογραφή
 
         function generateNewWallet() {
-            const wallet = ethers.Wallet.createRandom();
-            myAddress = wallet.address;
-            currentPrivateKey = wallet.privateKey.replace("0x", ""); // Αποθήκευση σε hex χωρίς 0x
-            document.getElementById('input-my-key').value = myAddress;
-            alert("Επιτυχής δημιουργία διεύθυνσης: " + myAddress);
+            // Δημιουργία αυθεντικού Nostr keypair
+            myPrivkey = NostrTools.generatePrivateKey();
+            myPubkey = NostrTools.getPublicKey(myPrivkey);
+            
+            document.getElementById('input-my-key').value = myPubkey;
+            alert("Επιτυχής δημιουργία Nostr Public Key:\n\n" + myPubkey);
         }
 
         function toggleMode() {
@@ -97,10 +98,10 @@
 
         async function initNostrConnection() {
             relayUrl = document.getElementById('input-relay').value.trim();
-            myAddress = document.getElementById('input-my-key').value.trim();
+            myPubkey = document.getElementById('input-my-key').value.trim();
             peerKey = document.getElementById('input-peer-key').value.trim();
 
-            if (!myAddress || !relayUrl) {
+            if (!myPubkey || !relayUrl) {
                 alert("Συμπληρώστε τη διεύθυνσή σας και το Relay!");
                 return;
             }
@@ -114,7 +115,7 @@
 
                 sub = pool.sub([relayUrl], [{
                     kinds: [1, 4, 25555],
-                    "#p": [myAddress]
+                    "#p": [myPubkey]
                 }]);
 
                 sub.on('event', event => {
@@ -138,26 +139,26 @@
             }
 
             try {
-                // Χρήση έτοιμου event template από τη βιβλιοθήκη NostrTools
+                // Δημιουργία βασικού template event
                 let event = {
                     kind: 1,
+                    pubkey: myPubkey,
                     created_at: Math.floor(Date.now() / 1000),
                     tags: [["p", peerKey]],
-                    content: text,
-                    pubkey: myAddress.replace("0x", "").toLowerCase()
+                    content: text
                 };
 
-                // Αν έχουμε το ιδιωτικό κλειδί από τη δημιουργία πορτοφολιού
-                if (currentPrivateKey) {
+                // Αν έχουμε δημιουργήσει κλειδί από το κουμπί, το υπογράφουμε κανονικά
+                if (myPrivkey) {
                     event.id = NostrTools.getEventHash(event);
-                    event.sig = NostrTools.signEvent(event, currentPrivateKey);
+                    event.sig = NostrTools.signEvent(event, myPrivkey);
                 } else {
-                    // Αν έχει γίνει απλή εισαγωγή διεύθυνσης, δημιουργούμε ένα έγκυρο mock id για δοκιμή
+                    // Αν έγινε απλή επικόλληση δημόσιου κλειδιού, δημιουργούμε το hash
                     event.id = NostrTools.getEventHash(event);
-                    event.sig = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+                    // Mock υπογραφή για δοκιμή χωρίς private key
+                    event.sig = "0".repeat(128); 
                 }
 
-                // Δημοσίευση στο relay
                 const pubs = pool.publish([relayUrl], event);
                 await Promise.all(pubs);
                 
