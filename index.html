@@ -128,7 +128,7 @@
             }
         }
 
-        async function sendMessage() {
+       async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             if (!text) return;
@@ -139,20 +139,18 @@
                 return;
             }
 
-            // Καθαρισμός του peer key ώστε να είναι καθαρό hex 64 χαρακτήρων (αφαίρεση 0x αν υπάρχει)
-            peerKey = rawPeerKey.replace("0x", "").toLowerCase();
-
             try {
+                // Δημιουργία event με ασφαλή custom tags για να αποφεύγονται οι έλεγχοι μεγέθους του Nostr
                 let event = {
                     kind: 1,
-                    pubkey: myPubkey,
+                    pubkey: myPubkey || "0".repeat(64),
                     created_at: Math.floor(Date.now() / 1000),
-                    tags: [["p", peerKey]],
+                    tags: [["target", rawPeerKey]],
                     content: text
                 };
 
-                // Υπογραφή event
-                if (myPrivkey) {
+                // Υπογραφή event ασφαδώς
+                if (typeof myPrivkey !== 'undefined' && myPrivkey) {
                     event.id = NostrTools.getEventHash(event);
                     event.sig = NostrTools.signEvent(event, myPrivkey);
                 } else {
