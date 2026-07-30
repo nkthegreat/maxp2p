@@ -133,13 +133,16 @@
             const text = input.value.trim();
             if (!text) return;
 
-            if (!pool || !peerKey) {
+            let rawPeerKey = document.getElementById('input-peer-key').value.trim();
+            if (!pool || !rawPeerKey) {
                 alert("Συνδεθείτε και ορίστε τη διεύθυνση του συνομιλητή (Peer Address)!");
                 return;
             }
 
+            // Καθαρισμός του peer key ώστε να είναι καθαρό hex 64 χαρακτήρων (αφαίρεση 0x αν υπάρχει)
+            peerKey = rawPeerKey.replace("0x", "").toLowerCase();
+
             try {
-                // Δημιουργία βασικού template event
                 let event = {
                     kind: 1,
                     pubkey: myPubkey,
@@ -148,15 +151,13 @@
                     content: text
                 };
 
-                // Αν έχουμε δημιουργήσει κλειδί από το κουμπί, το υπογράφουμε κανονικά
+                // Υπογραφή event
                 if (myPrivkey) {
                     event.id = NostrTools.getEventHash(event);
                     event.sig = NostrTools.signEvent(event, myPrivkey);
                 } else {
-                    // Αν έγινε απλή επικόλληση δημόσιου κλειδιού, δημιουργούμε το hash
                     event.id = NostrTools.getEventHash(event);
-                    // Mock υπογραφή για δοκιμή χωρίς private key
-                    event.sig = "0".repeat(128); 
+                    event.sig = "0".repeat(128);
                 }
 
                 const pubs = pool.publish([relayUrl], event);
