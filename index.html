@@ -127,44 +127,47 @@
             }
         }
 
-        async function sendMessage() {
+       async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             if (!text) return;
 
-            peerKey = document.getElementById('input-peer-key').value.trim();
-            if (!pool || !peerKey || !myPrivkey) {
+            let rawPeerKey = document.getElementById('input-peer-key').value.trim();
+            if (!pool || !rawPeerKey || !myPrivkey) {
                 alert("Δημιουργήστε ταυτότητα, συνδεθείτε και ορίστε το Peer Key!");
                 return;
             }
 
+            // Καθαρισμός και μετατροπή σε καθαρό hex 64 χαρακτήρων
+            let cleanPeerKey = rawPeerKey.replace("0x", "").toLowerCase().trim();
+            if (cleanPeerKey.length < 64) {
+                cleanPeerKey = cleanPeerKey.padStart(64, '0'); // Συμπλήρωση αν λείπουν ψηφία για δοκιμή
+            }
+
             try {
-                // Κατασκευή έγκυρου Nostr event
                 let event = {
                     kind: 1,
                     pubkey: myPubkey,
                     created_at: Math.floor(Date.now() / 1000),
-                    tags: [["p", peerKey]],
+                    tags: [["p", cleanPeerKey]],
                     content: text
                 };
 
-                // Υπολογισμός cryptographic hash και υπογραφή (απαραίτητο για να το δεχτεί το relay)
                 event.id = NostrTools.getEventHash(event);
                 event.sig = NostrTools.signEvent(event, myPrivkey);
 
-                // Δημοσίευση στο Relay
                 const pubs = pool.publish([relayUrl], event);
                 await Promise.all(pubs);
                 
                 appendMessage(text, true);
                 input.value = "";
-                console.log("Το μήνυμα υπογράφηκε και στάλθηκε επιτυχώς!");
+                console.log("Το μήνυμα στάλθηκε επιτυχώς!");
             } catch (e) {
                 console.error("Σφάλμα αποστολής:", e);
                 alert("Αποτυχία αποστολής: " + e.message);
             }
         }
-
+        
         function appendMessage(text, isMe) {
             const chatContainer = document.getElementById('chat-messages');
             const msgBubble = document.createElement('div');
