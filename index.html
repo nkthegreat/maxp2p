@@ -140,16 +140,18 @@
             }
 
             try {
-                // Δημιουργία event με ασφαλή custom tags για να αποφεύγονται οι έλεγχοι μεγέθους του Nostr
+                // Χρησιμοποιούμε απευθείας τη μορφή 0x... στα tags ακριβώς όπως το κινητό
                 let event = {
                     kind: 1,
                     pubkey: myPubkey || "0".repeat(64),
                     created_at: Math.floor(Date.now() / 1000),
-                    tags: [["target", rawPeerKey]],
+                    tags: [
+                        ["p", rawPeerKey],        // Η διεύθυνση 0x... για το κινητό
+                        ["address", rawPeerKey]   // Επιπλέον εναλλακτικό tag για ασφάλεια
+                    ],
                     content: text
                 };
 
-                // Υπογραφή event ασφαδώς
                 if (typeof myPrivkey !== 'undefined' && myPrivkey) {
                     event.id = NostrTools.getEventHash(event);
                     event.sig = NostrTools.signEvent(event, myPrivkey);
@@ -163,6 +165,7 @@
                 
                 appendMessage(text, true);
                 input.value = "";
+                console.log("Το μήνυμα στάλθηκε με τη διεύθυνση:", rawPeerKey);
             } catch (e) {
                 console.error("Σφάλμα αποστολής:", e);
                 alert("Αποτυχία αποστολής: " + e.message);
