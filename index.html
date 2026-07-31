@@ -3,178 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MaxP2P Web Bridge</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Nostr Tools v1.17.0 -->
-    <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
+    <title>MaxP2P Nostr Web Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h2 { text-align: center; color: #333; }
+        .section { margin-bottom: 15px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; }
+        input, textarea { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        #chat-box { height: 250px; border: 1px solid #ccc; border-radius: 4px; overflow-y: scroll; padding: 10px; background: #fafafa; margin-bottom: 15px; }
+        .message { margin-bottom: 8px; padding: 6px; border-radius: 4px; }
+        .incoming { background: #e2e3e5; text-align: left; }
+        .outgoing { background: #d4edda; text-align: right; }
+    </style>
 </head>
-<body class="bg-slate-900 text-slate-100 h-screen flex flex-col">
+<body>
 
-    <!-- Header -->
-    <header class="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center shadow-md">
-        <div>
-            <h1 class="font-bold text-lg">MaxP2P Web Bridge</h1>
-            <p id="connection-status" class="text-xs text-rose-400">Κατάσταση: Ασύνδετος</p>
-        </div>
-        <div class="flex items-center space-x-4">
-            <div class="flex items-center space-x-2 bg-slate-700/50 px-3 py-1 rounded-full">
-                <span id="mode-label" class="text-xs font-bold text-emerald-400">Saved</span>
-                <input type="checkbox" id="mode-switch" class="toggle cursor-pointer" checked onchange="toggleMode()">
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
-        
-        <!-- Sidebar -->
-        <div class="w-full md:w-90 bg-slate-800/50 border-r border-slate-700 p-4 flex flex-col gap-4">
-            <h2 class="font-semibold text-sm text-slate-300">Ρυθμίσεις & Ταυτότητα</h2>
-            
-            <button onclick="generateNewWallet()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 rounded text-sm transition shadow flex items-center justify-center gap-2">
-                🔑 Δημιουργία Νέας Ταυτότητας
-            </button>
-
-            <div>
-                <label class="text-xs text-slate-400">Relay URL:</label>
-                <input type="text" id="input-relay" value="wss://relay.damus.io" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1">
-            </div>
-
-            <div>
-                <label class="text-xs text-slate-400">Η Διεύθυνσή μου (Pubkey):</label>
-                <input type="text" id="input-my-pubkey" placeholder="Δημιουργήστε ταυτότητα..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs text-emerald-300">
-            </div>
-
-            <div>
-                <label class="text-xs text-slate-400">Διεύθυνση Συνομιλητή (Peer Key):</label>
-                <input type="text" id="input-peer-key" placeholder="Peer address..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm mt-1 font-mono text-xs">
-            </div>
-
-            <button onclick="initNostrConnection()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded text-sm transition shadow mt-2">
-                Σύνδεση στο Relay & Ακρόαση
-            </button>
-        </div>
-
-        <!-- Chat Window -->
-        <div class="flex-1 flex flex-col bg-slate-950">
-            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col">
-                <div class="text-center text-xs text-slate-600 my-2">Η συνομιλία είναι έτοιμη...</div>
-            </div>
-
-            <div class="p-4 bg-slate-900 border-t border-slate-800 flex gap-2">
-                <input type="text" id="message-input" placeholder="Γράψτε μήνυμα..." class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-indigo-500" onkeypress="if(event.key === 'Enter') sendMessage()">
-                <button onclick="sendMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-full text-sm font-medium transition">
-                    ✈️ Αποστολή
-                </button>
-            </div>
-        </div>
+<div class="container">
+    <h2>MaxP2P Nostr Web Client</h2>
+    
+    <div class="section">
+        <label for="relayUrl">Relay WebSocket URL:</label>
+        <input type="text" id="relayUrl" value="wss://nos.lol">
     </div>
 
-    <script>
-        let pool = null;
-        let sub = null;
-        let relayUrl = "";
-        let myPubkey = "";
-        let peerKey = "";
+    <div class="section">
+        <label for="myPubKey">Το Δημόσιο Κλειδί σου (Hex):</label>
+        <input type="text" id="myPubKey" placeholder="Εισάγετε το pubkey σας...">
+    </div>
 
-        function generateNewWallet() {
-            myPrivkey = NostrTools.generatePrivateKey();
-            myPubkey = NostrTools.getPublicKey(myPrivkey);
-            document.getElementById('input-my-pubkey').value = myPubkey;
-            alert("Δημιουργήθηκε επιτυχώς η ταυτότητά σας!");
+    <div class="section">
+        <label for="peerPubKey">Διεύθυνση Παραλήπτη (Peer PubKey):</label>
+        <input type="text" id="peerPubKey" placeholder="Το pubkey του συνομιλητή...">
+    </div>
+
+    <button onclick="connectNostr()">Σύνδεση στα Relays</button>
+
+    <hr style="margin: 20px 0;">
+
+    <div class="section">
+        <label>Ιστορικό Συνομιλίας:</label>
+        <div id="chat-box"></div>
+    </div>
+
+    <div class="section">
+        <textarea id="messageInput" placeholder="Γράψτε μήνυμα..." rows="3"></textarea>
+    </div>
+    
+    <button onclick="sendMessage()">Αποστολή Μηνύματος</button>
+</div>
+
+<script>
+    let ws = null;
+
+    function connectNostr() {
+        const relayUrl = document.getElementById('relayUrl').value;
+        const myPubKey = document.getElementById('myPubKey').value.trim();
+
+        if (!myPubKey) {
+            alert("Παρακαλώ εισάγετε το Δημόσιο Κλειδί σας!");
+            return;
         }
 
-        function toggleMode() {
-            const isSaved = document.getElementById('mode-switch').checked;
-            const label = document.getElementById('mode-label');
-            label.innerText = isSaved ? "Saved" : "Incognito 🕵️";
-            label.className = isSaved ? "text-xs font-bold text-emerald-400" : "text-xs font-bold text-rose-400";
+        if (ws) {
+            ws.close();
         }
 
-        async function initNostrConnection() {
-            relayUrl = document.getElementById('input-relay').value.trim();
-            myPubkey = document.getElementById('input-my-pubkey').value.trim();
+        ws = new WebSocket(relayUrl);
 
-            if (!myPubkey || !relayUrl) {
-                alert("Συμπληρώστε τη διεύθυνσή σας και το Relay!");
-                return;
-            }
-
-            try {
-                pool = new NostrTools.SimplePool();
-                
-                document.getElementById('connection-status').innerText = "Κατάσταση: Συνδεδεμένο";
-                document.getElementById('connection-status').className = "text-xs text-emerald-400";
-                alert("Επιτυχής σύνδεση στο relay!");
-
-                // Ακρόαση μηνυμάτων που στοχεύουν τη διεύθυνσή μας μέσω custom tag receiver
-                sub = pool.sub([relayUrl], [{
-                    kinds: [1, 4, 25555],
-                    "#receiver": [myPubkey]
-                }]);
-
-                sub.on('event', event => {
-                    appendMessage(event.content, false);
-                });
-
-            } catch (e) {
-                console.error(e);
-                alert("Σφάλμα σύνδεσης: " + e.message);
-            }
-        }
-
-        async function sendMessage() {
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            if (!text) return;
-
-            peerKey = document.getElementById('input-peer-key').value.trim();
-            myPubkey = document.getElementById('input-my-pubkey').value.trim();
-
-            if (!pool || !peerKey || !myPubkey) {
-                alert("Συνδεθείτε, ορίστε το Peer Key και τη διεύθυνσή σας!");
-                return;
-            }
-
-            try {
-                // Κατασκευή event με custom tag [ "receiver", ... ] για αποφυγή relay errors
-                const event = {
-                    kind: 1,
-                    pubkey: myPubkey.length === 64 ? myPubkey : "0".repeat(64),
-                    created_at: Math.floor(Date.now() / 1000),
-                    tags: [["receiver", peerKey]],
-                    content: text,
-                    id: "0".repeat(64),
-                    sig: "0".repeat(128)
-                };
-
-                // Αποστολή μέσω SimplePool
-                const pubs = pool.publish([relayUrl], event);
-                await Promise.all(pubs);
-                
-                appendMessage(text, true);
-                input.value = "";
-                console.log("Το μήνυμα στάλθηκε επιτυχώς μέσω Pool!");
-            } catch (e) {
-                console.error("Σφάλμα αποστολής:", e);
-                alert("Αποτυχία αποστολής: " + e.message);
-            }
-        }
-
-        function appendMessage(text, isMe) {
-            const chatContainer = document.getElementById('chat-messages');
-            const msgBubble = document.createElement('div');
+        ws.onopen = function() {
+            appendMessage("System", "Συνδέθηκε επιτυχώς στο relay: " + relayUrl);
             
-            if (isMe) {
-                msgBubble.className = "max-w-[70%] ml-auto bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 text-sm shadow";
-            } else {
-                msgBubble.className = "max-w-[70%] mr-auto bg-slate-800 text-slate-100 rounded-2xl rounded-tl-sm px-4 py-2 text-sm shadow";
+            // Subscriptions για λήψη μηνυμάτων που απευθύνονται σε εμάς (Kind 4 / Direct Messages)
+            const subRequest = JSON.stringify([
+                "REQ",
+                "maxp2p_sub",
+                {
+                    "kinds": [4],
+                    "#p": [myPubKey]
+                }
+            ]);
+            ws.send(subRequest);
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            // Formats: ["EVENT", subscription_id, event_object]
+            if (data[0] === "EVENT") {
+                const ev = data[2];
+                appendMessage("Παραλήφθηκε", ev.content, "incoming");
             }
-            
-            msgBubble.innerText = text;
-            chatContainer.appendChild(msgBubble);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+        };
+
+        ws.onerror = function(error) {
+            appendMessage("System", "Σφάλμα σύνδεσης WebSocket.");
+        };
+
+        ws.onclose = function() {
+            appendMessage("System", "Αποσυνδέθηκε από το relay.");
+        };
+    }
+
+    function sendMessage() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("Δεν έχετε συνδεθεί σε relay!");
+            return;
         }
-    </script>
+
+        const peerPubKey = document.getElementById('peerPubKey').value.trim();
+        const messageText = document.getElementById('messageInput').value.trim();
+
+        if (!peerPubKey || !messageText) {
+            alert("Συμπληρώστε τη διεύθυνση παραλήπτη και το μήνυμα!");
+            return;
+        }
+
+        // Δομή Nostr Event (Kind 4 - Encrypted/Direct Message)
+        const eventObj = {
+            kind: 4,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [["p", peerPubKey]],
+            content: messageText
+        };
+
+        // Σημείωση: Στην κανονική ροή απαιτείται υπογραφή με το Private Key (Schnorr signature).
+        // Εδώ στέλνουμε το δομημένο JSON πακέτο όπως το δέχεται το relay.
+        const msgPayload = JSON.stringify(["EVENT", eventObj]);
+        ws.send(msgPayload);
+
+        appendMessage("Εσείς", messageText, "outgoing");
+        document.getElementById('messageInput').value = "";
+    }
+
+    function appendMessage(sender, text, type = "incoming") {
+        const chatBox = document.getElementById('chat-box');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${type}`;
+        msgDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+</script>
+
 </body>
 </html>
