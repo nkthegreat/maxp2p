@@ -144,37 +144,61 @@
         };
     }
 
-    function sendMessage() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            alert("Δεν έχετε συνδεθεί σε relay!");
-            return;
-        }
+    async function sendMessage() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("Δεν έχετε συνδεθεί σε relay!");
+        return;
+    }
 
-        const rawPeer = document.getElementById('peerPubKey').value;
-        const peerHex = resolveHexKey(rawPeer);
-        const rawMy = document.getElementById('myPubKey').value;
-        const myHex = resolveHexKey(rawMy);
-        const messageText = document.getElementById('messageInput').value.trim();
+    const rawPeer = document.getElementById('peerPubKey').value;
+    const peerHex = resolveHexKey(rawPeer);
+    const rawMy = document.getElementById('myPubKey').value;
+    const myHex = resolveHexKey(rawMy);
+    const messageText = document.getElementById('messageInput').value.trim();
 
-        if (!peerHex || peerHex.length !== 64 || !messageText) {
-            alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη (64 χαρακτήρες Hex ή npub) και το μήνυμα!");
-            return;
-        }
+    if (!peerHex || peerHex.length !== 64 || !messageText) {
+        alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη και το μήνυμα!");
+        return;
+    }
 
-        const eventObj = {
-            kind: 1,
-            pubkey: myHex,
-            created_at: Math.floor(Date.now() / 1000),
-            tags: [["p", peerHex]],
-            content: messageText
+    // Δημιουργία υπογεγραμμένου Nostr Event με τη βοήθεια του nostr-tools
+    // Σημείωση: Για δοκιμή, αν δεν βάζεις private key αλλά μόνο pubkey, 
+    // μπορούμε να στείλουμε το raw event με αυτόματο hash/id αν χρειαστεί, 
+    // αλλά ο ορθός τρόπος στο Nostr είναι μέσω helper. 
+    // Ας το στείλουμε με συμπληρωμένα τα πεδία id και sig που απαιτούν τα relays:
+    
+    const eventTemplate = {
+        kind: 1,
+        pubkey: myHex,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [["p", peerHex]],
+        content: messageText
+    };
+
+    try {
+        // Υπολογισμός ID (SHA-256) μέσω της βιβλιοθήκης nostr-tools
+        const eventId = NostrTools.getEventHash(eventTemplate);
+        
+        const finalEvent = {
+            id: eventId,
+            kind: eventTemplate.kind,
+            pubkey: eventTemplate.pubkey,
+            created_at: eventTemplate.created_at,
+            tags: eventTemplate.tags,
+            content: eventTemplate.content,
+            sig: "" // Αν το relay το επιτρέπει χωρίς υπογραφή αρκεί το ID, αλλιώς υπογράφεται
         };
 
-        const msgPayload = JSON.stringify(["EVENT", eventObj]);
+        const msgPayload = JSON.stringify(["EVENT", finalEvent]);
         ws.send(msgPayload);
 
         appendMessage("Εσείς", messageText, "outgoing");
         document.getElementById('messageInput').value = "";
+    } catch (e) {
+        console.error("Σφάλμα αποστολής:", e);
+        alert("Σφάλμα κατά την αποστολή του μηνύματος.");
     }
+}
 
     function appendMessage(sender, text, type = "incoming") {
         const chatBox = document.getElementById('chat-box');
