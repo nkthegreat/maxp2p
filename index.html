@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Nostr Web Client</title>
-    <!-- Εισαγωγή βιβλιοθήκης για μετατροπές Bech32/npub -->
+    <!-- Εισαγωγή βιβλιοθήκης nostr-tools -->
     <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
     <style>
         body {
@@ -47,12 +47,12 @@
     </div>
 
     <div class="section">
-        <label for="myPubKey">Το Δημόσιο Κλειδί σου (Hex ή npub):</label>
-        <input type="text" id="myPubKey" placeholder="Εισάγετε το pubkey ή npub σας...">
+        <label for="myPrivKey">Το Private Key σου (Hex 64 chars ή nsec):</label>
+        <input type="password" id="myPrivKey" placeholder="Εισάγετε το private key σας...">
     </div>
 
     <div class="section">
-        <label for="peerPubKey">Διεύθυνση Παραλήπτη (Peer Hex/npub):</label>
+        <label for="peerPubKey">Διεύθυνση Παραλήπτη / Android App (Hex ή npub):</label>
         <input type="text" id="peerPubKey" placeholder="Το pubkey του κινητού...">
     </div>
 
@@ -74,30 +74,39 @@
 
 <script>
     let ws = null;
+    let myPubKeyHex = "";
+    let myPrivKeyHex = "";
 
-    // Διόρθωση διεύθυνσης (ανεξάρτητα αν βάλει npub ή hex)
+    // Αποκωδικοποίηση nsec/npub ή καθαρισμός Hex
     function resolveHexKey(inputKey) {
+        if (!inputKey) return "";
         inputKey = inputKey.trim();
-        if (inputKey.startsWith("npub1")) {
+        if (inputKey.startsWith("npub1") || inputKey.startsWith("nsec1")) {
             try {
                 let decoded = NostrTools.nip19.decode(inputKey);
-                if (decoded.type === "npub") {
-                    return decoded.data; // Επιστρέφει το καθαρό 64ψήφιο Hex
-                }
+                return decoded.data; // Επιστρέφει το καθαρό Hex
             } catch (e) {
-                console.error("Σφάλμα αποκωδικοποίησης npub:", e);
+                console.error("Σφάλμα αποκωδικοποίησης Bech32 key:", e);
             }
         }
         return inputKey.toLowerCase().replace(/^0x/, "");
     }
 
     function connectNostr() {
-        const relayUrl = document.getElementById('relayUrl').value;
-        const rawKey = document.getElementById('myPubKey').value;
-        const myPubKeyHex = resolveHexKey(rawKey);
+        const relayUrl = document.getElementById('relayUrl').value.trim();
+        const rawPriv = document.getElementById('myPrivKey').value;
+        myPrivKeyHex = resolveHexKey(rawPriv);
 
-        if (!myPubKeyHex || myPubKeyHex.length !== 64) {
-            alert("Παρακαλώ εισάγετε ένα έγκυρο Δημόσιο Κλειδί (Hex 64 χαρακτήρων ή npub)!");
+        if (!myPrivKeyHex || myPrivKeyHex.length !== 64) {
+            alert("Παρακαλώ εισάγετε ένα έγκυρο Private Key (Hex 64 χαρακτήρων ή nsec)!");
+            return;
+        }
+
+        try {
+            // Αυτόματος υπολογισμός Public Key από το Private Key μέσω nostr-tools
+            myPubKeyHex = NostrTools.getPublicKey(myPrivKeyHex);
+        } catch (e) {
+            alert("Αποτυχία παραγωγής Public Key από το Private Key!");
             return;
         }
 
@@ -109,9 +118,9 @@
         ws = new WebSocket(relayUrl);
 
         ws.onopen = function() {
-            appendMessage("System", "Συνδέθηκε επιτυχώς! Ακρόαση για το κλειδί: " + myPubKeyHex.substring(0, 8) + "...", "system");
+            appendMessage("System", "Συνδέθηκε! Το PubKey σου είναι: " + myPubKeyHex.substring(0, 10) + "...", "system");
             
-            // Subscriptions για λήψη μηνυμάτων (Kind 1) που έχουν tag #p με το Hex κλειδί μας
+            // Αίτηση REQ filter για λήψη μηνυμάτων που έχουν target (#p) το PubKey μας
             const subRequest = JSON.stringify([
                 "REQ",
                 "maxp2p_sub",
@@ -126,9 +135,23 @@
         ws.onmessage = function(event) {
             try {
                 const data = JSON.parse(event.data);
+                
+                // Επιβεβαίωση αποστολής από το Relay (OK response)
+                if (data[0] === "OK") {
+                    const isSuccess = data[2];
+                    const reason = data[3];
+                    if (isSuccess) {
+                        console.log("✅ Το Relay αποδέχτηκε το μήνυμα!");
+                    } else {
+                        console.error("❌ Απορρίφθηκε από το relay:", reason);
+                        appendMessage("System", "⚠️ Απορρίφθηκε: " + reason, "system");
+                    }
+                }
+
+                // Λήψη εισερχόμενου EVENT
                 if (data[0] === "EVENT") {
                     const ev = data[2];
-                    appendMessage("Παραλήφθηκε", ev.content, "incoming");
+                    appendMessage("Android App", ev.content, "incoming");
                 }
             } catch (e) {
                 console.error("Σφάλμα ανάγνωσης μηνύματος:", e);
@@ -145,60 +168,43 @@
     }
 
     async function sendMessage() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert("Δεν έχετε συνδεθεί σε relay!");
-        return;
-    }
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("Δεν έχετε συνδεθεί σε relay!");
+            return;
+        }
 
-    const rawPeer = document.getElementById('peerPubKey').value;
-    const peerHex = resolveHexKey(rawPeer);
-    const rawMy = document.getElementById('myPubKey').value;
-    const myHex = resolveHexKey(rawMy);
-    const messageText = document.getElementById('messageInput').value.trim();
+        const rawPeer = document.getElementById('peerPubKey').value;
+        const peerHex = resolveHexKey(rawPeer);
+        const messageText = document.getElementById('messageInput').value.trim();
 
-    if (!peerHex || peerHex.length !== 64 || !messageText) {
-        alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη και το μήνυμα!");
-        return;
-    }
+        if (!peerHex || peerHex.length !== 64 || !messageText) {
+            alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη (64 chars) και το μήνυμα!");
+            return;
+        }
 
-    // Δημιουργία υπογεγραμμένου Nostr Event με τη βοήθεια του nostr-tools
-    // Σημείωση: Για δοκιμή, αν δεν βάζεις private key αλλά μόνο pubkey, 
-    // μπορούμε να στείλουμε το raw event με αυτόματο hash/id αν χρειαστεί, 
-    // αλλά ο ορθός τρόπος στο Nostr είναι μέσω helper. 
-    // Ας το στείλουμε με συμπληρωμένα τα πεδία id και sig που απαιτούν τα relays:
-    
-    const eventTemplate = {
-        kind: 1,
-        pubkey: myHex,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [["p", peerHex]],
-        content: messageText
-    };
-
-    try {
-        // Υπολογισμός ID (SHA-256) μέσω της βιβλιοθήκης nostr-tools
-        const eventId = NostrTools.getEventHash(eventTemplate);
-        
-        const finalEvent = {
-            id: eventId,
-            kind: eventTemplate.kind,
-            pubkey: eventTemplate.pubkey,
-            created_at: eventTemplate.created_at,
-            tags: eventTemplate.tags,
-            content: eventTemplate.content,
-            sig: "" // Αν το relay το επιτρέπει χωρίς υπογραφή αρκεί το ID, αλλιώς υπογράφεται
+        const eventTemplate = {
+            kind: 1,
+            pubkey: myPubKeyHex,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [["p", peerHex]],
+            content: messageText
         };
 
-        const msgPayload = JSON.stringify(["EVENT", finalEvent]);
-        ws.send(msgPayload);
+        try {
+            // Υπογραφή Event με το Private Key (BIP-340 Schnorr Compliant)
+            const signedEvent = NostrTools.finishEvent(eventTemplate, myPrivKeyHex);
 
-        appendMessage("Εσείς", messageText, "outgoing");
-        document.getElementById('messageInput').value = "";
-    } catch (e) {
-        console.error("Σφάλμα αποστολής:", e);
-        alert("Σφάλμα κατά την αποστολή του μηνύματος.");
+            // Αποστολή του πλήρους υπογεγραμμένου event στο Relay
+            const msgPayload = JSON.stringify(["EVENT", signedEvent]);
+            ws.send(msgPayload);
+
+            appendMessage("Εσείς", messageText, "outgoing");
+            document.getElementById('messageInput').value = "";
+        } catch (e) {
+            console.error("Σφάλμα υπογραφής/αποστολής:", e);
+            alert("Σφάλμα κατά την υπογραφή του μηνύματος: " + e.message);
+        }
     }
-}
 
     function appendMessage(sender, text, type = "incoming") {
         const chatBox = document.getElementById('chat-box');
