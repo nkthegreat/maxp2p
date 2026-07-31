@@ -168,44 +168,43 @@
     }
 
     async function sendMessage() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            alert("Δεν έχετε συνδεθεί σε relay!");
-            return;
-        }
-
-        const rawPeer = document.getElementById('peerPubKey').value;
-        const peerHex = resolveHexKey(rawPeer);
-        const messageText = document.getElementById('messageInput').value.trim();
-
-        if (!peerHex || peerHex.length !== 64 || !messageText) {
-            alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη (64 chars) και το μήνυμα!");
-            return;
-        }
-
-        const eventTemplate = {
-            kind: 1,
-            pubkey: myPubKeyHex,
-            created_at: Math.floor(Date.now() / 1000),
-            tags: [["p", peerHex]],
-            content: messageText
-        };
-
-        try {
-            // Υπογραφή Event με το Private Key (BIP-340 Schnorr Compliant)
-            const signedEvent = NostrTools.finishEvent(eventTemplate, myPrivKeyHex);
-
-            // Αποστολή του πλήρους υπογεγραμμένου event στο Relay
-            const msgPayload = JSON.stringify(["EVENT", signedEvent]);
-            ws.send(msgPayload);
-
-            appendMessage("Εσείς", messageText, "outgoing");
-            document.getElementById('messageInput').value = "";
-        } catch (e) {
-            console.error("Σφάλμα υπογραφής/αποστολής:", e);
-            alert("Σφάλμα κατά την υπογραφή του μηνύματος: " + e.message);
-        }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("Δεν έχετε συνδεθεί σε relay!");
+        return;
     }
 
+    const rawPeer = document.getElementById('peerPubKey').value;
+    const peerHex = resolveHexKey(rawPeer);
+    const messageText = document.getElementById('messageInput').value.trim();
+
+    if (!peerHex || peerHex.length !== 64 || !messageText) {
+        alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη (64 chars Hex) και το μήνυμα!");
+        return;
+    }
+
+    const eventTemplate = {
+        kind: 1,
+        pubkey: myPubKeyHex,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [["p", peerHex]], // Target PubKey
+        content: messageText
+    };
+
+    try {
+        const signedEvent = NostrTools.finishEvent(eventTemplate, myPrivKeyHex);
+
+        console.log("📤 Στέλνω Event στο Relay:", signedEvent);
+
+        const msgPayload = JSON.stringify(["EVENT", signedEvent]);
+        ws.send(msgPayload);
+
+        appendMessage("Εσείς", messageText, "outgoing");
+        document.getElementById('messageInput').value = "";
+    } catch (e) {
+        console.error("Σφάλμα υπογραφής/αποστολής:", e);
+        alert("Σφάλμα κατά την υπογραφή: " + e.message);
+    }
+}
     function appendMessage(sender, text, type = "incoming") {
         const chatBox = document.getElementById('chat-box');
         const msgDiv = document.createElement('div');
