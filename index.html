@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP2P Nostr Web Client</title>
+    <!-- Εισαγωγή βιβλιοθήκης για μετατροπές Bech32/npub -->
+    <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -31,6 +33,7 @@
         .message { margin-bottom: 8px; padding: 6px; border-radius: 4px; }
         .incoming { background: #e2e3e5; text-align: left; }
         .outgoing { background: #d4edda; text-align: right; }
+        .system { background: #fff3cd; color: #856404; font-size: 13px; text-align: center; }
     </style>
 </head>
 <body>
@@ -44,13 +47,13 @@
     </div>
 
     <div class="section">
-        <label for="myPubKey">Το Δημόσιο Κλειδί σου (Hex):</label>
-        <input type="text" id="myPubKey" placeholder="Εισάγετε το pubkey σας...">
+        <label for="myPubKey">Το Δημόσιο Κλειδί σου (Hex ή npub):</label>
+        <input type="text" id="myPubKey" placeholder="Εισάγετε το pubkey ή npub σας...">
     </div>
 
     <div class="section">
-        <label for="peerPubKey">Διεύθυνση Παραλήπτη (Peer PubKey):</label>
-        <input type="text" id="peerPubKey" placeholder="Το pubkey του συνομιλητή...">
+        <label for="peerPubKey">Διεύθυνση Παραλήπτη (Peer Hex/npub):</label>
+        <input type="text" id="peerPubKey" placeholder="Το pubkey του κινητού...">
     </div>
 
     <button onclick="connectNostr()">Σύνδεση στα Relays</button>
@@ -72,12 +75,29 @@
 <script>
     let ws = null;
 
+    // Διόρθωση διεύθυνσης (ανεξάρτητα αν βάλει npub ή hex)
+    function resolveHexKey(inputKey) {
+        inputKey = inputKey.trim();
+        if (inputKey.startsWith("npub1")) {
+            try {
+                let decoded = NostrTools.nip19.decode(inputKey);
+                if (decoded.type === "npub") {
+                    return decoded.data; // Επιστρέφει το καθαρό 64ψήφιο Hex
+                }
+            } catch (e) {
+                console.error("Σφάλμα αποκωδικοποίησης npub:", e);
+            }
+        }
+        return inputKey.toLowerCase().replace(/^0x/, "");
+    }
+
     function connectNostr() {
         const relayUrl = document.getElementById('relayUrl').value;
-        const myPubKey = document.getElementById('myPubKey').value.trim();
+        const rawKey = document.getElementById('myPubKey').value;
+        const myPubKeyHex = resolveHexKey(rawKey);
 
-        if (!myPubKey) {
-            alert("Παρακαλώ εισάγετε το Δημόσιο Κλειδί σας!");
+        if (!myPubKeyHex || myPubKeyHex.length !== 64) {
+            alert("Παρακαλώ εισάγετε ένα έγκυρο Δημόσιο Κλειδί (Hex 64 χαρακτήρων ή npub)!");
             return;
         }
 
@@ -85,38 +105,42 @@
             ws.close();
         }
 
+        appendMessage("System", "Σύνδεση στο " + relayUrl + "...", "system");
         ws = new WebSocket(relayUrl);
 
         ws.onopen = function() {
-            appendMessage("System", "Συνδέθηκε επιτυχώς στο relay: " + relayUrl);
+            appendMessage("System", "Συνδέθηκε επιτυχώς! Ακρόαση για το κλειδί: " + myPubKeyHex.substring(0, 8) + "...", "system");
             
-            // Subscriptions για λήψη μηνυμάτων που απευθύνονται σε εμάς (Kind 4 / Direct Messages)
+            // Subscriptions για λήψη μηνυμάτων (Kind 1) που έχουν tag #p με το Hex κλειδί μας
             const subRequest = JSON.stringify([
                 "REQ",
                 "maxp2p_sub",
                 {
-                    "kinds": [4],
-                    "#p": [myPubKey]
+                    "kinds": [1, 4],
+                    "#p": [myPubKeyHex]
                 }
             ]);
             ws.send(subRequest);
         };
 
         ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            // Formats: ["EVENT", subscription_id, event_object]
-            if (data[0] === "EVENT") {
-                const ev = data[2];
-                appendMessage("Παραλήφθηκε", ev.content, "incoming");
+            try {
+                const data = JSON.parse(event.data);
+                if (data[0] === "EVENT") {
+                    const ev = data[2];
+                    appendMessage("Παραλήφθηκε", ev.content, "incoming");
+                }
+            } catch (e) {
+                console.error("Σφάλμα ανάγνωσης μηνύματος:", e);
             }
         };
 
         ws.onerror = function(error) {
-            appendMessage("System", "Σφάλμα σύνδεσης WebSocket.");
+            appendMessage("System", "Σφάλμα σύνδεσης WebSocket.", "system");
         };
 
         ws.onclose = function() {
-            appendMessage("System", "Αποσυνδέθηκε από το relay.");
+            appendMessage("System", "Αποσυνδέθηκε από το relay.", "system");
         };
     }
 
@@ -126,24 +150,25 @@
             return;
         }
 
-        const peerPubKey = document.getElementById('peerPubKey').value.trim();
+        const rawPeer = document.getElementById('peerPubKey').value;
+        const peerHex = resolveHexKey(rawPeer);
+        const rawMy = document.getElementById('myPubKey').value;
+        const myHex = resolveHexKey(rawMy);
         const messageText = document.getElementById('messageInput').value.trim();
 
-        if (!peerPubKey || !messageText) {
-            alert("Συμπληρώστε τη διεύθυνση παραλήπτη και το μήνυμα!");
+        if (!peerHex || peerHex.length !== 64 || !messageText) {
+            alert("Συμπληρώστε σωστά τη διεύθυνση παραλήπτη (64 χαρακτήρες Hex ή npub) και το μήνυμα!");
             return;
         }
 
-        // Δομή Nostr Event (Kind 4 - Encrypted/Direct Message)
         const eventObj = {
-            kind: 4,
+            kind: 1,
+            pubkey: myHex,
             created_at: Math.floor(Date.now() / 1000),
-            tags: [["p", peerPubKey]],
+            tags: [["p", peerHex]],
             content: messageText
         };
 
-        // Σημείωση: Στην κανονική ροή απαιτείται υπογραφή με το Private Key (Schnorr signature).
-        // Εδώ στέλνουμε το δομημένο JSON πακέτο όπως το δέχεται το relay.
         const msgPayload = JSON.stringify(["EVENT", eventObj]);
         ws.send(msgPayload);
 
